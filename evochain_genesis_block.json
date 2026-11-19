@@ -1,17 +1,28 @@
 {
-  "chain": "EvoChain",
+  "chain": "Mac 'N Cheese Chain",
+  "ticker": "RONI",
   "index": 0,
-  "timestamp": 1795132025,
-  "timestamp_utc": "2026-11-19T23:47:05Z",
-  "timestamp_pst": "2026-11-19T15:47:05-08:00",
-  "data": "EvoChain genesis \u2014 created by Mac & Destiny's Child in ai.evo",
+  "timestamp": 1795132723,
+  "timestamp_utc": "2026-11-19T23:58:43Z",
+  "timestamp_pst": "2026-11-19T15:58:43-08:00",
+  "data": "Mac 'N Cheese Chain genesis \u2014 RONI \u2014 circulating supply 100000 to start \u2014 created by Mac & Destiny's Child in ai.evo",
   "previous_hash": "00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000",
-  "nonce": 4452,
+  "nonce": 23976,
   "difficulty": "hash starts with '0000'",
   "difficulty_prefix": "0000",
-  "hash": "000002d7954aef129e29b68b19fa44156d104edde9a335071a8c20267e83162683aab5e9d2428200ac8061b996f529e6aa51b6f1aa1e70d4a71d89df1a9ea06b",
+  "hash": "0000adbc0f16c14cc2540a4a259339fd0b02a1503bad43f0bbb484eb5007c36d68f9d825875297db1b26be6eb2a0532496c6a31317f6ce9a9fc7cf6a8591c1b0",
   "hash_function": "EvoHash-11 \u2014 1-pass EvoKDF-11 chain from ai.evo / EvoCrypt v0.2",
   "hash_hex_length": 128,
-  "attempts": 4453,
-  "mine_time_seconds": 0.068
+  "attempts": 23977,
+  "mine_time_seconds": 0.369,
+  "circulating_supply_start_RONI": 100000,
+  "design": {
+    "mobile_lightweight": "CPU-only EvoHash-11, 1 pass, no ASIC/GPU/memory requirement; genesis difficulty 0000 is phone-feasible in demo",
+    "circulating_supply_start_RONI": 100000,
+    "max_supply_proposal_RONI": 10000000000,
+    "max_supply_status": "proposal only, not hashed, not final \u2014 Mac to confirm (alternatives: 1B / 10B / 100B)",
+    "first_trade_pair_proposal": "RONI/USD",
+    "backing": "roadmap only \u2014 real-world physical + digital asset backing would need custodians, audits, legal structure; NOT backed today",
+    "supersedes": "Mac 'N Cheese Chain Block 0 (no supply in data), 2026-11-19 15:57:37 PST, nonce 112867, hash 000015339905af898cc80dfb8c247c0df1c9461155341de47314cf2c782d74a28249c4b93dffe494241a59c02f4460542329fe7dc162c26c86880588b201a5f3; and EvoChain Block 0, 2026-11-19 15:47:05 PST, hash 000002d7954aef129e29b68b19fa44156d104edde9a335071a8c20267e83162683aab5e9d2428200ac8061b996f529e6aa51b6f1aa1e70d4a71d89df1a9ea06b"
+  }
 }
