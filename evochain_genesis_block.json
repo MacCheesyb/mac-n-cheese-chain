@@ -1,0 +1,17 @@
+{
+  "chain": "EvoChain",
+  "index": 0,
+  "timestamp": 1795132025,
+  "timestamp_utc": "2026-11-19T23:47:05Z",
+  "timestamp_pst": "2026-11-19T15:47:05-08:00",
+  "data": "EvoChain genesis \u2014 created by Mac & Destiny's Child in ai.evo",
+  "previous_hash": "00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000",
+  "nonce": 4452,
+  "difficulty": "hash starts with '0000'",
+  "difficulty_prefix": "0000",
+  "hash": "000002d7954aef129e29b68b19fa44156d104edde9a335071a8c20267e83162683aab5e9d2428200ac8061b996f529e6aa51b6f1aa1e70d4a71d89df1a9ea06b",
+  "hash_function": "EvoHash-11 \u2014 1-pass EvoKDF-11 chain from ai.evo / EvoCrypt v0.2",
+  "hash_hex_length": 128,
+  "attempts": 4453,
+  "mine_time_seconds": 0.068
+}
