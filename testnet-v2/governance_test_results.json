@@ -1,0 +1,257 @@
+{
+  "tests": [
+    {
+      "name": "proposal creation + deterministic ID",
+      "passed": true,
+      "detail": "PROP-975dfdf7c71fce1b8a6b58d24e6dae643ace6345"
+    },
+    {
+      "name": "offline node starts at height 1 (genesis only)",
+      "passed": true,
+      "detail": ""
+    },
+    {
+      "name": "node: gov-propose accepted into mempool",
+      "passed": true,
+      "detail": "PROP-975dfdf7c71fce1b8a6b58d24e6dae643ace6345"
+    },
+    {
+      "name": "snapshot: whale 10,000 / small 100 / broke 0 at proposal block",
+      "passed": true,
+      "detail": "snapshot_block=1"
+    },
+    {
+      "name": "node: post-proposal transfer accepted",
+      "passed": true,
+      "detail": "accepted into mempool"
+    },
+    {
+      "name": "snapshot power: transfer after proposal does not change snapshot",
+      "passed": true,
+      "detail": "current broke balance now 5000, snapshot still 0"
+    },
+    {
+      "name": "node: whale vote accepted",
+      "passed": true,
+      "detail": "accepted into mempool"
+    },
+    {
+      "name": "reject: one vote per address (duplicate in mempool)",
+      "passed": true,
+      "detail": "duplicate vote: R0NI-9d1241e713681c84213b49bb98c27a5ad7805742 already has a pending vote on PROP-975dfdf7c71fce1b8a6b58d24e6dae643ace6345"
+    },
+    {
+      "name": "reject: zero-balance-at-snapshot voter (broke holds 5,000 now, 0 at snapshot)",
+      "passed": true,
+      "detail": "voter R0NI-9d238230e8faf2f5cb48c03e61d2a13c591fc4e5 held 0 R0NI at the snapshot (block 1) \u2014 zero-balance addresses cannot vote"
+    },
+    {
+      "name": "reject: forged vote signature",
+      "passed": true,
+      "detail": "signature verification failed: "
+    },
+    {
+      "name": "reject: vote for unknown proposal",
+      "passed": true,
+      "detail": "unknown proposal PROP-0000000000000000000000000000000000000000 \u2014 it was never filed (or is still only in the mempool)"
+    },
+    {
+      "name": "reject: vote for option not on the ballot",
+      "passed": true,
+      "detail": "option 'maybe' is not on proposal PROP-975dfdf7c71fce1b8a6b58d24e6dae643ace6345 (options: ['yes', 'no'])"
+    },
+    {
+      "name": "weighted tally: whale 10,000 yes beats ten 100s no",
+      "passed": true,
+      "detail": "yes=10000 no=1000 total=11000"
+    },
+    {
+      "name": "proposal still open before end block",
+      "passed": true,
+      "detail": "height=5 end=10"
+    },
+    {
+      "name": "reject: duplicate proposal (same proposal ID)",
+      "passed": true,
+      "detail": "duplicate proposal PROP-975dfdf7c71fce1b8a6b58d24e6dae643ace6345 \u2014 already filed on this chain"
+    },
+    {
+      "name": "node: future-window proposal accepted for filing",
+      "passed": true,
+      "detail": "accepted into mempool"
+    },
+    {
+      "name": "reject: vote outside window (before voting_start_block)",
+      "passed": true,
+      "detail": "vote outside voting window: proposal PROP-85a48042e598637381aaecbabca1447b18fd2924 votes in blocks [99, 100), chain height is 6"
+    },
+    {
+      "name": "node: proposal 3 filed (window [6, 9))",
+      "passed": true,
+      "detail": "accepted into mempool"
+    },
+    {
+      "name": "quorum not met -> failed (1,000 < 10,000)",
+      "passed": true,
+      "detail": "total=1000 status=failed"
+    },
+    {
+      "name": "node: proposal 4 filed (window [9, 12))",
+      "passed": true,
+      "detail": "accepted into mempool"
+    },
+    {
+      "name": "majority no -> failed (whale's snapshot power beats the smalls)",
+      "passed": true,
+      "detail": "yes=1001 (snapshot 1001) no=4999 (snapshot 4999)"
+    },
+    {
+      "name": "majority yes -> passed (proposal 1 closes passed at height 12)",
+      "passed": true,
+      "detail": "status=passed height=13"
+    },
+    {
+      "name": "live: 3 nodes up (ports 8031-8033)",
+      "passed": true,
+      "detail": ""
+    },
+    {
+      "name": "live: gov-propose accepted via HTTP",
+      "passed": true,
+      "detail": "{'accepted': True, 'reason': 'accepted into mempool'}"
+    },
+    {
+      "name": "live: /proposals lists the filed proposal",
+      "passed": true,
+      "detail": "1 proposal(s) listed"
+    },
+    {
+      "name": "live: whale vote accepted via HTTP",
+      "passed": true,
+      "detail": "{'accepted': True, 'reason': 'accepted into mempool'}"
+    },
+    {
+      "name": "live: duplicate vote rejected via HTTP",
+      "passed": true,
+      "detail": "{'accepted': False, 'reason': 'duplicate vote: R0NI-9d1241e713681c84213b49bb98c27a5ad7805742 already has a pending vote on PROP-975dfdf7c71fce1b8a6b58d24e6dae643ace6345'}"
+    },
+    {
+      "name": "live: zero-balance vote rejected via HTTP",
+      "passed": true,
+      "detail": "{'accepted': False, 'reason': 'voter R0NI-9d238230e8faf2f5cb48c03e61d2a13c591fc4e5 held 0 R0NI at the snapshot (block 1) \u2014 zero-balance addresses cannot vote'}"
+    },
+    {
+      "name": "live: /proposal tally \u2014 whale 10,000 yes beats ten 100s no, passed",
+      "passed": true,
+      "detail": "tally={'proposal_id': 'PROP-975dfdf7c71fce1b8a6b58d24e6dae643ace6345', 'per_option': {'yes': 10000, 'no': 1000}, 'total_voting_power': 11000, 'votes_counted': 11, 'quorum': 10000, 'quorum_met': True, 'winner': 'yes', 'winning_power': 10000, 'majority_met': True, 'passed': True, 'result': 'passed', 'status': 'passed', 'snapshot_block': 1, 'votes': [{'type': 'gov-vote', 'sender': 'R0NI-2a3fc03dbe48d6f84980685b629752a4541746c5', 'recipient': 'PROP-975dfdf7c71fce1b8a6b58d24e6dae643ace6345', 'amount': 0, 'nonce': 0, 'proposal_id': 'PROP-975dfdf7c71fce1b8a6b58d24e6dae643ace6345', 'option': 'no', 'signature': '1c55698f679c5facd34e2fdbe541bc49d6ac8a2c9d86803152e0a009f37c06923f545b57f17523359b80e906a86d4bd986f12afa32499cb4f07ff712c0a2410d', 'sender_pubkey_hex': '71c1207eea72e8b02c10d7b31a2d6e92d9fd77875977147b048af83f2e49a097', 'txid': '7194e8dc8d3bdba1e46ccf4a546f123ab1e95977dbc0376f62b3d7a3961a6834ed8147ad46ea101e69d692d73ad788bc06b0a660a444908a34c5601d6fdebfc5'}, {'type': 'gov-vote', 'sender': 'R0NI-271570977300514a5c3af49a2aba794f4d40c34f', 'recipient': 'PROP-975dfdf7c71fce1b8a6b58d24e6dae643ace6345', 'amount': 0, 'nonce': 0, 'proposal_id': 'PROP-975dfdf7c71fce1b8a6b58d24e6dae643ace6345', 'option': 'no', 'signature': '47fedc6a42442a6cd838758cc4885756c854bc56607eb3f38c196c2b9fed00cd2906dcb4b0177113721401f78e6e59f958d30df679a9298971a1ff4e88e07f0a', 'sender_pubkey_hex': '7806e2fdfc4de1e68887c30545728bc10d7599d11253d68559fd5b308e76ba28', 'txid': '840d890a05a284c0f483dd7239c8ecf34cb551c961fe78b6a26c0d29060390183083016d21d434b7cadc1068669906161f071fcc0a23f4ace82e14681a17b3ce'}, {'type': 'gov-vote', 'sender': 'R0NI-ca420b868a868a05da80e56e53fe1b280baaee60', 'recipient': 'PROP-975dfdf7c71fce1b8a6b58d24e6dae643ace6345', 'amount': 0, 'nonce': 0, 'proposal_id': 'PROP-975dfdf7c71fce1b8a6b58d24e6dae643ace6345', 'option': 'no', 'signature': 'b897cfdaae2918ce8524ac480bdf1742902b4f7dc055751ef2d206095d195af5b9c8dd2529e803a2b62a8032fa2a4ab4566ae30ccbf9f7c5082229afc15c460f', 'sender_pubkey_hex': 'b20531993557b28395b3230afda204c4586e3b9e8be6be337be25e8abe1142a7', 'txid': 'ef9d564c977554cfccdf426cccc799d23c7330d6137caf2adda556400ba4e290ecaec200a08099402e927f29a469a763894a1191c8ae4b2d3e314a21bb884145'}, {'type': 'gov-vote', 'sender': 'R0NI-068d59af212934c88d963ac8357fcb055e49bb83', 'recipient': 'PROP-975dfdf7c71fce1b8a6b58d24e6dae643ace6345', 'amount': 0, 'nonce': 0, 'proposal_id': 'PROP-975dfdf7c71fce1b8a6b58d24e6dae643ace6345', 'option': 'no', 'signature': 'ddb5cf052ea7debf0e5b318d7658277a5234801e55a9bab25071555782dff62c96c5ce1aef0d8d66c1ab70bd38e2e7813e1b63914f129797321d5cac36ccce0b', 'sender_pubkey_hex': '91e0561f39bb0d6dde279c5304776ad7945249931f2ddc3d0ee6406d7c5e2747', 'txid': '5e281b4ff526e773cd2f5d9116c7fb729580ac3ea921f73ebe493416ba877a7478fe9310fdf48abefc4b307a2790040c15d6f66da9cc56037218da4f1966e203'}, {'type': 'gov-vote', 'sender': 'R0NI-7f2d5c0451d67120613dd43747111f5a1556dbe8', 'recipient': 'PROP-975dfdf7c71fce1b8a6b58d24e6dae643ace6345', 'amount': 0, 'nonce': 0, 'proposal_id': 'PROP-975dfdf7c71fce1b8a6b58d24e6dae643ace6345', 'option': 'no', 'signature': '956154ebce5454bed2a06fdeda617eb22eaac0cb8f5677018bcca724c2d14cc5814531c2eed7c69e0c5cdd712405328ef5c7823c30fe17288cdee9dfbfd0c204', 'sender_pubkey_hex': '7132f8361fcdbf88e76179627bb65d2613b4f429b6b623bc802e4dc57a62fef6', 'txid': '8597a5cc4c4f326ec6bdd654359200cac54fa668357f29d9d6c811fd24afcf849359137ba139fb2f7bdca311958adebf0bb54a80651e6e381f049481dfc59d7c'}, {'type': 'gov-vote', 'sender': 'R0NI-34b7eb13a2c1a0f412f2f2a13b72f889fe8f92fa', 'recipient': 'PROP-975dfdf7c71fce1b8a6b58d24e6dae643ace6345', 'amount': 0, 'nonce': 0, 'proposal_id': 'PROP-975dfdf7c71fce1b8a6b58d24e6dae643ace6345', 'option': 'no', 'signature': '82a33e88b1906c100eb3fffa7aec18a57050facd79be30ac05249c316d893af9725716034cd13d4f870269d3a2685ea9a2a73837346b7e76b3783ed354f7cd0b', 'sender_pubkey_hex': 'bf86f9a196c0449b001a79966ac936a22fb07ea4800e89732b5434b898fffd91', 'txid': 'f738c5691e435f05843b843bd10ac65b3111dd4b22a410aa573c6560859c293b039f2931e75eb9eb74196d1caf95f479d8d9dd5ac291e25c98ecae082afa6cee'}, {'type': 'gov-vote', 'sender': 'R0NI-f972f48fbd65385591cf11e2002d7860b83626bb', 'recipient': 'PROP-975dfdf7c71fce1b8a6b58d24e6dae643ace6345', 'amount': 0, 'nonce': 0, 'proposal_id': 'PROP-975dfdf7c71fce1b8a6b58d24e6dae643ace6345', 'option': 'no', 'signature': 'c7bd8e8f281550ce9c1e89e60e2aa06c2a579f76af73426bcb4d2b637e3e0dc4b70269e12c05460060fe9cd7f6c44d3d6e390c1321163dcb2e5e6b39ef05b703', 'sender_pubkey_hex': '1f98e691ec36f7827557edd0802bcdb10543c9cf5af866481f39a4771f6c7a68', 'txid': '01781ea58e74426a900f3dfd326e1ee09be34e6fc21c770f2729edf9486b2ec6f1e46488c28729c8dc0f44f6d7a061b1b5e4ff6fc457e3e66ceda97c3cd3d15b'}, {'type': 'gov-vote', 'sender': 'R0NI-f60e4327e0618aedb90358e55d6ba188088584b6', 'recipient': 'PROP-975dfdf7c71fce1b8a6b58d24e6dae643ace6345', 'amount': 0, 'nonce': 0, 'proposal_id': 'PROP-975dfdf7c71fce1b8a6b58d24e6dae643ace6345', 'option': 'no', 'signature': '8a4f99060999d38a305c586a8d689c38bcd6c2e0bb5ccacaccc0eb1442c90b5ac1c9a504477ab46015c5670eed2b70e41a6873e2d332ab37cb187c927c44bf08', 'sender_pubkey_hex': '1c983be3870c2e8d80bd1c955b4dcf1279333f73f718452493adda99afd5685e', 'txid': '6dd8280f7fa4960e518e890798ed04f32afe54ed025ab71bafc80357fdf6214da755eb3d238964e56eff326104317dff299bcd0016d99ee7343c86eaf96cc401'}, {'type': 'gov-vote', 'sender': 'R0NI-5c5788ce15385531afe46325b7de5b9ea4d9e98a', 'recipient': 'PROP-975dfdf7c71fce1b8a6b58d24e6dae643ace6345', 'amount': 0, 'nonce': 0, 'proposal_id': 'PROP-975dfdf7c71fce1b8a6b58d24e6dae643ace6345', 'option': 'no', 'signature': '93055b78083d82d160bc4d69efcd75d31e7220766138aa4c2fa535e7c9bae8b203712b1e9281f4a133681406c2d28ecc6ce91fc0071d069d25f266d7f4eff007', 'sender_pubkey_hex': '0c6adaabbe31a9900aec48d935b9a0bdb5c19ac96c5efefdca4d336048e31dd3', 'txid': 'd52b68697c2889d74ebc6c3da152790d7b48d1db7ddaff003e773c4a92a975057ab66b1838967adb2cddad9a16706d5165a2c0ad496e38d14707ff9b91e43e95'}, {'type': 'gov-vote', 'sender': 'R0NI-916ca74b313591a12bce71c06202f91994f11702', 'recipient': 'PROP-975dfdf7c71fce1b8a6b58d24e6dae643ace6345', 'amount': 0, 'nonce': 0, 'proposal_id': 'PROP-975dfdf7c71fce1b8a6b58d24e6dae643ace6345', 'option': 'no', 'signature': '5a14c139b9e6ac2a640bb94a6dc7d06694aad380fa5fb46797232e3b64d40d5a0f607f97920ff3a24965a18efbc42764416fd56b60a81cb005c889f0c5da4203', 'sender_pubkey_hex': 'e0507f773618fe12193a558891d6402a55e9248608396bceaab794b2ec754a34', 'txid': '0436d6e7869be6ea4072ec3a45065b1b6b07989ef1cd80699bc164ef68c1f54f3795aa72e5f2f0236dd1dc4f149ab7fb01cc1b930ec9a691542e1da6c3a86565'}, {'type': 'gov-vote', 'sender': 'R0NI-9d1241e713681c84213b49bb98c27a5ad7805742', 'recipient': 'PROP-975dfdf7c71fce1b8a6b58d24e6dae643ace6345', 'amount': 0, 'nonce': 1, 'proposal_id': 'PROP-975dfdf7c71fce1b8a6b58d24e6dae643ace6345', 'option': 'yes', 'signature': 'f59e1ead51efba7503e4c5e16245bfa80e55b8fdeb390a5fba065ecd785c82a32c12e32d7c6067eccd7ddc1cf972ef621645ff981e07fe85b137165b91905607', 'sender_pubkey_hex': '5a03cc9afa015ff4ed0d3243f11c9d54a62324569d062c986d57ccf784d9244e', 'txid': 'f2095790ad1525d63cfe963f29ea683fe530526a6bcc5ff9cbc3e7aa356826baa54fb9b3538695e59f0bc11a40d97fb7e4b36ce41de220d97589e2d26ca96f9f'}]} status=passed"
+    },
+    {
+      "name": "live: vote after window closed rejected via HTTP",
+      "passed": true,
+      "detail": "{'accepted': False, 'reason': 'vote outside voting window: proposal PROP-975dfdf7c71fce1b8a6b58d24e6dae643ace6345 votes in blocks [1, 6), chain height is 6'}"
+    },
+    {
+      "name": "live: all 3 nodes agree on the chain",
+      "passed": true,
+      "detail": "heights 6/6/6"
+    },
+    {
+      "name": "live: /tally endpoint matches /proposal tally",
+      "passed": true,
+      "detail": "{'proposal_id': 'PROP-975dfdf7c71fce1b8a6b58d24e6dae643ace6345', 'per_option': {'yes': 10000, 'no': 1000}, 'total_voting_power': 11000, 'votes_counted': 11, 'quorum': 10000, 'quorum_met': True, 'winne"
+    }
+  ],
+  "passed": 32,
+  "failed": 0,
+  "offline_tally_proposal_1": {
+    "proposal_id": "PROP-975dfdf7c71fce1b8a6b58d24e6dae643ace6345",
+    "per_option": {
+      "yes": 10000,
+      "no": 1000
+    },
+    "total_voting_power": 11000,
+    "votes_counted": 11,
+    "quorum": 10000,
+    "quorum_met": true,
+    "winner": "yes",
+    "winning_power": 10000,
+    "majority_met": true,
+    "passed": true,
+    "result": "passed",
+    "status": "open",
+    "snapshot_block": 1
+  },
+  "offline_tally_proposal_3_quorum_fail": {
+    "proposal_id": "PROP-c1129dcf6fd76dcca13fcb4f13a9c4ca24f089b0",
+    "per_option": {
+      "yes": 1000,
+      "no": 0
+    },
+    "total_voting_power": 1000,
+    "votes_counted": 10,
+    "quorum": 10000,
+    "quorum_met": false,
+    "winner": "yes",
+    "winning_power": 1000,
+    "majority_met": true,
+    "passed": false,
+    "result": "failed",
+    "status": "failed",
+    "snapshot_block": 6
+  },
+  "offline_tally_proposal_4_majority_no": {
+    "proposal_id": "PROP-37bd6c68e895fefab2036a0c33ab023912b84ad1",
+    "per_option": {
+      "yes": 1001,
+      "no": 4999
+    },
+    "total_voting_power": 6000,
+    "votes_counted": 11,
+    "quorum": 10000,
+    "quorum_met": false,
+    "winner": "no",
+    "winning_power": 4999,
+    "majority_met": true,
+    "passed": false,
+    "result": "failed",
+    "status": "failed",
+    "snapshot_block": 9
+  },
+  "offline_tally_proposal_1_closed": {
+    "proposal_id": "PROP-975dfdf7c71fce1b8a6b58d24e6dae643ace6345",
+    "per_option": {
+      "yes": 10000,
+      "no": 1000
+    },
+    "total_voting_power": 11000,
+    "votes_counted": 11,
+    "quorum": 10000,
+    "quorum_met": true,
+    "winner": "yes",
+    "winning_power": 10000,
+    "majority_met": true,
+    "passed": true,
+    "result": "passed",
+    "status": "passed",
+    "snapshot_block": 1
+  },
+  "live_tally": {
+    "proposal_id": "PROP-975dfdf7c71fce1b8a6b58d24e6dae643ace6345",
+    "per_option": {
+      "yes": 10000,
+      "no": 1000
+    },
+    "total_voting_power": 11000,
+    "votes_counted": 11,
+    "quorum": 10000,
+    "quorum_met": true,
+    "winner": "yes",
+    "winning_power": 10000,
+    "majority_met": true,
+    "passed": true,
+    "result": "passed",
+    "status": "passed",
+    "snapshot_block": 1
+  },
+  "live_proposal_id": "PROP-975dfdf7c71fce1b8a6b58d24e6dae643ace6345"
+}

@@ -1,0 +1,107 @@
+{
+  "testnet": "R0NI testnet v2 (R- block hashes)",
+  "passed": 20,
+  "failed": 0,
+  "tests": [
+    {
+      "name": "R- format: genesis hash is 'R-' + 128 hex chars",
+      "passed": true,
+      "detail": "R-000093868790db25445d821973b21d45d05c1bb7341347c549a4c66f1b902f0a86f2ba7680e0237ab38fd3c8977c472f170c966d6a63b730633f86293edd8f59"
+    },
+    {
+      "name": "R- format: is_valid_hash_format accepts the genesis hash",
+      "passed": true,
+      "detail": "R-0000938687..."
+    },
+    {
+      "name": "difficulty: hex part after 'R-' starts with 0000",
+      "passed": true,
+      "detail": "R-000093"
+    },
+    {
+      "name": "recompute: EvoHash-11 over the header (no prefix) matches hex part",
+      "passed": true,
+      "detail": "recomputed 000093868790..."
+    },
+    {
+      "name": "genesis: previous_hash is 'R-' + 128 zeros",
+      "passed": true,
+      "detail": "R-000000"
+    },
+    {
+      "name": "genesis: data names v2 / R- hashes / 100,000 to start",
+      "passed": true,
+      "detail": "R0NI testnet v2 genesis \u2014 R- block hashes \u2014 circulating supply 100000 to start"
+    },
+    {
+      "name": "txids unchanged: genesis txs carry no txid, plain txids stay hex",
+      "passed": true,
+      "detail": "txids are EvoHash-11 hex; only block hashes carry R-"
+    },
+    {
+      "name": "offline node starts at height 1 (genesis only)",
+      "passed": true,
+      "detail": ""
+    },
+    {
+      "name": "mined block carries an R- hash meeting difficulty",
+      "passed": true,
+      "detail": "R-0000c86f"
+    },
+    {
+      "name": "reject: plain hex hash (no R- prefix)",
+      "passed": true,
+      "detail": "block hash must be 'R-' + 128 hex chars (v2 format)"
+    },
+    {
+      "name": "reject: wrong prefix 'X-' instead of 'R-'",
+      "passed": true,
+      "detail": "block hash must be 'R-' + 128 hex chars (v2 format)"
+    },
+    {
+      "name": "reject: R- hash whose hex part does not start with 0000",
+      "passed": true,
+      "detail": "block does not meet difficulty 0000 (hex part after 'R-')"
+    },
+    {
+      "name": "reject: tampered block (tx changed, hash no longer matches)",
+      "passed": true,
+      "detail": "block hash does not match recomputed EvoHash-11"
+    },
+    {
+      "name": "chain linking: block 2 previous_hash is block 1's R- hash",
+      "passed": true,
+      "detail": "R-0000c86f"
+    },
+    {
+      "name": "reject: block whose previous_hash is plain hex, not R-",
+      "passed": true,
+      "detail": "previous_hash does not match chain tip"
+    },
+    {
+      "name": "live: 3 v2 nodes up (ports 8041-8043)",
+      "passed": true,
+      "detail": ""
+    },
+    {
+      "name": "live: all 3 nodes agree on the same chain",
+      "passed": true,
+      "detail": "heights [2, 2, 2]"
+    },
+    {
+      "name": "live: every block hash is R- + 128 hex, hex part starts 0000",
+      "passed": true,
+      "detail": "2 blocks, tip R-0000760b..."
+    },
+    {
+      "name": "live: every block links via its predecessor's R- hash",
+      "passed": true,
+      "detail": "genesis R-0000ddda..."
+    },
+    {
+      "name": "live: /status tip is the R- tip hash",
+      "passed": true,
+      "detail": "R-0000760b08"
+    }
+  ]
+}

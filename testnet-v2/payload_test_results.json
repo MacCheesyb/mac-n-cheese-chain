@@ -1,0 +1,180 @@
+{
+  "offline": {
+    "text": {
+      "kind": "text",
+      "mime": "text/plain",
+      "original_size": 157,
+      "compressed_size": 157,
+      "sha256_match": true,
+      "byte_identical": true
+    },
+    "image": {
+      "kind": "image",
+      "mime": "image/png",
+      "original_size": 92,
+      "compressed_size": 93,
+      "sha256_match": true,
+      "byte_identical": true
+    },
+    "gif": {
+      "kind": "gif",
+      "mime": "image/gif",
+      "original_size": 35,
+      "compressed_size": 36,
+      "sha256_match": true,
+      "byte_identical": true
+    },
+    "audio": {
+      "kind": "audio",
+      "mime": "audio/wav",
+      "original_size": 8044,
+      "compressed_size": 520,
+      "sha256_match": true,
+      "byte_identical": true
+    },
+    "video": {
+      "kind": "video",
+      "mime": "video/mp4",
+      "original_size": 5390,
+      "compressed_size": 4816,
+      "sha256_match": true,
+      "byte_identical": true
+    },
+    "ref": {
+      "kind": "ref",
+      "valid": true,
+      "note": "no inline bytes \u2014 media fetched off-chain and hash-checked"
+    }
+  },
+  "live": {
+    "text": {
+      "kind": "text",
+      "mime": "text/plain",
+      "original_size": 157,
+      "compressed_size": 157,
+      "sha256_match": true,
+      "byte_identical": true,
+      "block": 1
+    },
+    "image": {
+      "kind": "image",
+      "mime": "image/png",
+      "original_size": 92,
+      "compressed_size": 93,
+      "sha256_match": true,
+      "byte_identical": true,
+      "block": 1
+    },
+    "gif": {
+      "kind": "gif",
+      "mime": "image/gif",
+      "original_size": 35,
+      "compressed_size": 36,
+      "sha256_match": true,
+      "byte_identical": true,
+      "block": 1
+    },
+    "audio": {
+      "kind": "audio",
+      "mime": "audio/wav",
+      "original_size": 8044,
+      "compressed_size": 520,
+      "sha256_match": true,
+      "byte_identical": true,
+      "block": 1
+    },
+    "video": {
+      "kind": "video",
+      "mime": "video/mp4",
+      "original_size": 5390,
+      "compressed_size": 4816,
+      "sha256_match": true,
+      "byte_identical": true,
+      "block": 1
+    },
+    "ref": {
+      "kind": "ref",
+      "on_chain": true,
+      "sha256_match": true,
+      "byte_identical": null,
+      "note": "reference only \u2014 media stays off-chain"
+    }
+  },
+  "rejections": {
+    "offline": {
+      "oversize_raw": true,
+      "oversize_compressed": true,
+      "corrupted_compressed": true,
+      "sha256_mismatch": true,
+      "bad_mime": true,
+      "text_over_1000_chars": true
+    },
+    "live": {
+      "corrupted_compressed": {
+        "accepted": false,
+        "status": 400,
+        "reason": {
+          "accepted": false,
+          "reason": "invalid payload: compressed data is corrupt (zlib error: Error -3 while decompressing data: incorrect data check)"
+        }
+      },
+      "sha256_mismatch": {
+        "accepted": false,
+        "status": 400,
+        "reason": {
+          "accepted": false,
+          "reason": "invalid payload: sha256 mismatch \u2014 payload bytes do not match sha256_of_original"
+        }
+      },
+      "bad_mime": {
+        "accepted": false,
+        "status": 400,
+        "reason": {
+          "accepted": false,
+          "reason": "invalid payload: mime 'text/plain' is not allowed for kind 'image'"
+        }
+      },
+      "oversize_compressed": {
+        "accepted": false,
+        "status": 400,
+        "reason": {
+          "accepted": false,
+          "reason": "invalid payload: compressed media is 1500466 bytes \u2014 max on-chain is 1000000 bytes; use a 'ref' payload instead"
+        }
+      }
+    }
+  },
+  "fixtures": {
+    "text": {
+      "kind": "text",
+      "mime": "text/plain",
+      "filename": "message.txt",
+      "size": 157
+    },
+    "image": {
+      "kind": "image",
+      "mime": "image/png",
+      "filename": "test.png",
+      "size": 92
+    },
+    "gif": {
+      "kind": "gif",
+      "mime": "image/gif",
+      "filename": "test.gif",
+      "size": 35
+    },
+    "audio": {
+      "kind": "audio",
+      "mime": "audio/wav",
+      "filename": "tone.wav",
+      "size": 8044
+    },
+    "video": {
+      "kind": "video",
+      "mime": "video/mp4",
+      "filename": "test.mp4",
+      "size": 5390
+    }
+  },
+  "video_is_real_ffmpeg_mp4": true
+}

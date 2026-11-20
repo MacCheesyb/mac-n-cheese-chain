@@ -1,0 +1,25 @@
+{
+  "index": 0,
+  "timestamp": 1795209315,
+  "previous_hash": "R-00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000",
+  "data": "R0NI testnet v2 genesis \u2014 R- block hashes \u2014 circulating supply 100000 to start",
+  "transactions": [
+    {
+      "type": "genesis",
+      "recipient": "R0NI-6bb7791a5aea99a56f0a7c7e673bacefe29d894d",
+      "amount": 1000000
+    },
+    {
+      "type": "genesis",
+      "recipient": "R0NI-c0712536fb21d42ed9f85e4d2d56f114b4822e1c",
+      "amount": 1000000
+    },
+    {
+      "type": "genesis",
+      "recipient": "R0NI-0ecfe36a0194df7a02bb4c47b317701300811c26",
+      "amount": 1000000
+    }
+  ],
+  "nonce": 2060,
+  "hash": "R-0000f268031649e33f13d6868aab86cde180413818abc0c24cbcf766d156dd1f4f3c974284f9ffc0b5d43b7226304f6d21fd7fc82edd1c7f296dfe5255aecdb5"
+}
