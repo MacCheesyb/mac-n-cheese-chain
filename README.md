@@ -1,6 +1,6 @@
 # Mac 'N Cheese Chain — R0NI
 
-Prototype blockchain by Mac (MacCheesyb) and Destiny's Child.
+Prototype blockchain by Mac (MacCheesyb) and AI "Agent: Destiny's Child".
 Built from the EvoCrypt / ai.evo work: an X11-style 11-step hash chain.
 
 **Status: prototype only — not audited, no real value, do not use for real secrets or real money. R0NI is NOT backed today.**
