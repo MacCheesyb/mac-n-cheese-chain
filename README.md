@@ -95,6 +95,51 @@ still valid (format v1).
   1-second MP4 all round-tripped byte-identical through mined
   blocks (see `testnet/ANALYTICS.md`).
 
+### Asset certifications / NFTs — certificates on the chain (v0.3)
+
+A certificate is a signed record that a real asset — a photo,
+a document, a song, any file — belongs to an owner at a point
+in time, issued by someone. It is built on the v2 media
+payloads above, and it is the basis for NFTs and for
+certifying real-world assets and documents.
+
+- **What is recorded:** the asset's SHA-256 (never the bytes
+  themselves, unless the asset also travels as a v2 payload),
+  the issuer, the owner, the issue date, and an optional
+  expiry. Certificate ID is deterministic: `CERT-` + first 40
+  hex of EvoHash-11(asset SHA-256 + `|` + issuer address) —
+  the same asset certified by the same issuer always has the
+  same ID, so a duplicate mint is detectable and rejected.
+- **How anyone verifies it:** take the file + the certificate,
+  recompute the file's SHA-256 and check it matches, check the
+  certificate ID, check the issuer's Ed25519 signature, and
+  check the current owner in the chain — `cert-verify` does
+  all of this, and reports an expired certificate as
+  "expired" (authentic, but no longer current), never as
+  valid.
+- **Transfers:** a certificate moves only by a `cert-transfer`
+  transaction signed by the CURRENT owner. The node rejects a
+  transfer by anyone else, a mint of an already-certified
+  asset + issuer, and any certificate whose issuer signature
+  does not verify. Ownership lives in the chain / registry —
+  the certificate document always names the owner AT MINT.
+- **Minting moves 0 R0NI:** a `cert-mint` transaction records
+  the certificate only; no money moves. The asset file itself
+  travels in the transaction's v2 payload (inline up to the
+  media limits, or a `ref` payload for large/off-chain media).
+- **CLI:** `python3 roni_wallet.py cert-mint <wallet.json>
+  <password> <asset-file> <owner> <description> <nonce>
+  [--expires <unix>] [--registry certs.json]`,
+  `cert-verify <cert.json> [asset-file] [--registry certs.json]`,
+  `cert-transfer <wallet.json> <password> <cert.json> <to>
+  <nonce> [--registry certs.json]`. Tested in
+  `testnet/test_certs.py` (21 checks): PNG, document and
+  audio certificates minted and verified, one transferred
+  and verified under the new owner, and forged signature,
+  tampered asset, duplicate, non-owner transfer and expired
+  certificates all rejected — on the CLI, in a local
+  registry, and on a live testnet node.
+
 ### Genesis allocation — empty until Mac creates his wallet
 
 `genesis_allocation.json` in this repo has `"allocations": []` on

@@ -30,6 +30,12 @@ What it does:
     wallet Mac creates in the wallet app (wallet-app.html) is
     allocated the 100,000 R0NI genesis supply. No address is
     invented or pre-filled here.
+  * Asset certifications / NFTs (v0.3, see "Certificates" below):
+    mint a signed certificate for a real asset or document — the
+    asset's SHA-256, issuer, owner, issue date and optional expiry
+    — verifiable by anyone from the file + the certificate, and
+    transferable only by the current owner. The asset file itself
+    travels in a v2 media payload (inline or "ref").
 
 Payloads (transaction format v2 — backward compatible):
   A transaction may carry an optional "data" field:
@@ -100,6 +106,10 @@ Run:
   python3 roni_wallet.py validate-payload payload.json
   python3 roni_wallet.py make-tx <wallet.json> <password> <to> <amount> <nonce> [payload.json]
   python3 roni_wallet.py extract <tx.json> <output-path>   # verifies SHA-256, writes original bytes
+  # Certificates / NFTs (v0.3 — asset certification):
+  python3 roni_wallet.py cert-mint <wallet.json> <password> <asset-file> <owner-address> <description> <nonce> [--expires <unix>] [--registry certs.json]
+  python3 roni_wallet.py cert-verify <cert.json> [asset-file] [--registry certs.json]
+  python3 roni_wallet.py cert-transfer <wallet.json> <password> <cert.json> <to-address> <nonce> [--registry certs.json]
 
 MetaMask note:
   MetaMask speaks EVM (Ethereum-style secp256k1 addresses,
@@ -251,7 +261,11 @@ PAYLOAD_MIMES = {
     "audio": {"audio/wav", "audio/x-wav", "audio/mpeg", "audio/ogg",
               "audio/mp4", "audio/webm"},
     "video": {"video/mp4", "video/webm", "video/quicktime"},
-    "other": {"application/octet-stream"},
+    # "other" also carries documents (e.g. PDF certificates' source
+    # files) — the mime is checked, the bytes are hashed, same as
+    # any other payload. Added for the certification layer (v0.3).
+    "other": {"application/octet-stream", "application/pdf",
+              "text/plain", "text/markdown"},
     # "ref": any mime of the referenced media (must contain "/").
 }
 # Kinds whose bytes are stored inline, compressed with zlib.
@@ -562,6 +576,324 @@ def make_testnet_tx(wallet_path: str, password: str, recipient: str,
 
 
 # ---------------------------------------------------------------------------
+# Asset certifications / NFTs — v0.3, built on transaction format v2.
+#
+# A certificate is a signed record that a real asset (a photo, a
+# document, a song, any file) belongs to an owner at a point in time,
+# issued by someone. It is the on-chain basis for NFTs and for
+# certifying real-world assets and documents:
+#   * The ASSET itself is carried by a v2 media payload (inline, or a
+#     "ref" payload for large/off-chain media) — so the asset bytes
+#     are delivered losslessly and hash-checked, exactly as in v2.
+#   * The CERTIFICATE records only the asset's SHA-256 (never the
+#     bytes themselves), plus who issued it, who owns it, when it
+#     was issued, and an optional expiry. Anyone can verify it
+#     without trusting the issuer: recompute the file's SHA-256,
+#     check the certificate ID, check the issuer's Ed25519
+#     signature, and check the current owner in the chain ledger.
+#   * The certificate ID is deterministic: CERT- + first 40 hex of
+#     EvoHash-11(asset_sha256 + "|" + issuer_address). The same
+#     asset certified by the same issuer always has the same ID —
+#     so a duplicate mint of the same asset by the same issuer is
+#     detectable and rejected by the node. A different issuer
+#     certifying the same asset gets a different ID (a different
+#     attestation, not a duplicate).
+#   * A certificate is minted by a "cert-mint" transaction
+#     (amount 0 R0NI — no money moves, only the record) and moved
+#     by a "cert-transfer" transaction signed by the CURRENT owner.
+#     The node rejects a transfer signed by anyone else, a mint of
+#     an already-certified asset/issuer pair, and any certificate
+#     whose issuer signature does not verify.
+#   * Expiry: if expires_at is set and now > expires_at, the
+#     certificate verifies as EXPIRED — still authentic (the
+#     signature and hash still check out), but no longer current.
+#     Verification reports that explicitly, it never silently
+#     passes an expired certificate as current.
+# ---------------------------------------------------------------------------
+
+CERT_ID_PREFIX = "CERT-"
+CERT_ASSET_KINDS = ("image", "audio", "video", "gif", "document", "other")
+CERT_ASSET_MIMES = {
+    "image": {"image/png", "image/jpeg", "image/webp"},
+    "gif": {"image/gif"},
+    "audio": {"audio/wav", "audio/x-wav", "audio/mpeg", "audio/ogg",
+              "audio/mp4", "audio/webm"},
+    "video": {"video/mp4", "video/webm", "video/quicktime"},
+    "document": {"text/plain", "text/markdown", "application/pdf",
+                 "application/octet-stream"},
+    "other": {"application/octet-stream", "application/pdf", "text/plain"},
+}
+MAX_CERT_DESCRIPTION_CHARS = 500
+
+
+def cert_id_for(asset_sha256_hex: str, issuer_address: str) -> str:
+    """Deterministic certificate ID from asset hash + issuer address."""
+    if not _is_hex64(asset_sha256_hex):
+        raise ValueError("asset_sha256 must be 64 lowercase hex characters")
+    if not isinstance(issuer_address, str) or not issuer_address.startswith("R0NI-"):
+        raise ValueError("issuer_address must be an R0NI- address")
+    material = f"{asset_sha256_hex}|{issuer_address}".encode("utf-8")
+    return CERT_ID_PREFIX + evo_hash_11(material).hex()[:40]
+
+
+def cert_message(cert: dict) -> str:
+    """The message the issuer signs: canonical JSON of the cert
+    without its signature, sorted keys, no spaces."""
+    unsigned = {k: v for k, v in cert.items() if k != "signature"}
+    return json.dumps(unsigned, sort_keys=True, separators=(",", ":"))
+
+
+def make_certificate(asset_sha256_hex: str, issuer_address: str,
+                     issuer_pubkey_hex: str, owner_address: str,
+                     description: str, asset_kind: str, asset_mime: str,
+                     asset_filename=None, expires_at=None,
+                     issued_at=None) -> dict:
+    """Build an UNSIGNED certificate. Sign it with sign_certificate()."""
+    if asset_kind not in CERT_ASSET_KINDS:
+        raise ValueError(f"asset_kind must be one of {CERT_ASSET_KINDS}, got {asset_kind!r}")
+    if asset_mime not in CERT_ASSET_MIMES[asset_kind]:
+        raise ValueError(f"mime {asset_mime!r} is not allowed for asset kind {asset_kind!r}")
+    if not isinstance(description, str) or not description:
+        raise ValueError("description must be a non-empty string")
+    if len(description) > MAX_CERT_DESCRIPTION_CHARS:
+        raise ValueError(f"description is {len(description)} characters — "
+                         f"max is {MAX_CERT_DESCRIPTION_CHARS}")
+    if not isinstance(owner_address, str) or not owner_address.startswith("R0NI-"):
+        raise ValueError("owner_address must be an R0NI- address")
+    issued = int(issued_at) if issued_at is not None else int(__import__("time").time())
+    if expires_at is not None:
+        expires_at = int(expires_at)
+        if expires_at <= issued:
+            raise ValueError("expires_at must be after issued_at")
+    return {
+        "cert_id": cert_id_for(asset_sha256_hex, issuer_address),
+        "asset_sha256": asset_sha256_hex,
+        "asset_kind": asset_kind,
+        "asset_mime": asset_mime,
+        "asset_filename": _clean_filename(asset_filename),
+        "description": description,
+        "issuer": issuer_address,
+        "issuer_pubkey_hex": issuer_pubkey_hex,
+        "owner": owner_address,
+        "issued_at": issued,
+        "expires_at": expires_at,
+    }
+
+
+def sign_certificate(priv, cert: dict) -> dict:
+    """Return a copy of the cert with the issuer's Ed25519 signature."""
+    signed = dict(cert)
+    signed["signature"] = priv.sign(cert_message(cert).encode("utf-8")).hex()
+    return signed
+
+
+def verify_certificate_signature(cert: dict) -> bool:
+    """Check the issuer's signature and that the cert ID matches the
+    asset hash + issuer address. Does NOT check ownership or expiry
+    — use verify_certificate() for the full check."""
+    try:
+        if cert.get("cert_id") != cert_id_for(cert["asset_sha256"], cert["issuer"]):
+            return False
+        if r0ni_address(bytes.fromhex(cert["issuer_pubkey_hex"])) != cert["issuer"]:
+            return False
+        pub = Ed25519PublicKey.from_public_bytes(bytes.fromhex(cert["issuer_pubkey_hex"]))
+        pub.verify(bytes.fromhex(cert["signature"]), cert_message(cert).encode("utf-8"))
+        return True
+    except Exception:
+        return False
+
+
+def verify_certificate(cert: dict, asset_bytes=None, current_owner=None,
+                       now=None) -> tuple:
+    """Full verification of a certificate. Returns (ok, status dict).
+
+    Checks, in order: cert ID derivation, issuer signature, asset
+    hash (if the file bytes are supplied), expiry, and current
+    owner (if supplied, e.g. from the chain). An expired certificate
+    returns ok=False with status "expired" — authentic, but not
+    current. A hash mismatch returns "asset_hash_mismatch" — the
+    file presented is NOT the file that was certified."""
+    if not isinstance(cert, dict):
+        return False, {"status": "invalid", "reason": "certificate must be an object"}
+    if not verify_certificate_signature(cert):
+        return False, {"status": "invalid", "reason": "issuer signature or cert_id does not verify"}
+    if asset_bytes is not None:
+        if hashlib.sha256(asset_bytes).hexdigest() != cert.get("asset_sha256"):
+            return False, {"status": "asset_hash_mismatch",
+                           "reason": "the file's SHA-256 does not match asset_sha256 — "
+                                     "this is not the certified file"}
+    now = int(now) if now is not None else int(__import__("time").time())
+    if cert.get("expires_at") is not None and now > int(cert["expires_at"]):
+        return False, {"status": "expired",
+                       "reason": f"certificate expired at {cert['expires_at']} "
+                                 f"(now {now}) — authentic, but no longer current"}
+    # Ownership after a transfer lives in the chain / registry, NOT in
+    # the certificate document: the cert always names the owner AT
+    # MINT, and transfers are separate signed transactions recorded
+    # against the cert ID. So a current_owner supplied by the caller
+    # (from the registry/chain) is reported, never compared against
+    # cert["owner"] — comparing them would wrongly fail every
+    # legitimately transferred certificate.
+    return True, {"status": "valid", "cert_id": cert.get("cert_id"),
+                  "owner_at_mint": cert.get("owner"),
+                  "current_owner": current_owner if current_owner is not None
+                                   else cert.get("owner"),
+                  "issuer": cert.get("issuer"),
+                  "issued_at": cert.get("issued_at"),
+                  "expires_at": cert.get("expires_at")}
+
+
+# --- certificate transactions (cert-mint / cert-transfer) -------------
+
+def cert_tx_message(sender: str, recipient: str, amount: int, nonce: int,
+                    cert=None, cert_id=None, data=None) -> str:
+    """Signed message for a certificate transaction.
+
+    cert-mint:    sender|recipient|amount|nonce|CERT:<cert_id>|ASSET:<asset_sha256>[|PAYLOAD:<payload sha256>]
+    cert-transfer: sender|recipient|amount|nonce|CERT:<cert_id>|TRANSFER
+    The cert ID and asset hash are in the signed message, so neither
+    can be swapped without breaking the signature and the txid."""
+    base = f"{sender}|{recipient}|{amount}|{nonce}"
+    if cert is not None:
+        base += f"|CERT:{cert['cert_id']}|ASSET:{cert['asset_sha256']}"
+        if data is not None:
+            base += f"|PAYLOAD:{payload_sha256_hex(data)}"
+        return base
+    if cert_id is not None:
+        return base + f"|CERT:{cert_id}|TRANSFER"
+    return testnet_tx_message(sender, recipient, amount, nonce, data)
+
+
+def cert_tx_id(sender: str, recipient: str, amount: int, nonce: int,
+               cert=None, cert_id=None, data=None) -> str:
+    return evo_hash_11(cert_tx_message(
+        sender, recipient, amount, nonce, cert, cert_id, data).encode("utf-8")).hex()
+
+
+def make_cert_mint_tx(wallet_path: str, password: str, owner_address: str,
+                      cert: dict, nonce: int, data=None) -> dict:
+    """Mint a certificate: a signed cert-mint transaction (amount 0).
+
+    The wallet is the ISSUER: its address must be cert["issuer"] and
+    its key signs BOTH the certificate and the transaction. The
+    payload (the asset file, inline or ref) is validated first and
+    its hash must match the certificate's asset_sha256."""
+    if data is not None:
+        ok, reason = validate_payload(data)
+        if not ok:
+            raise ValueError(f"invalid payload: {reason}")
+        if data.get("sha256_of_original") != cert["asset_sha256"]:
+            raise ValueError("payload sha256_of_original does not match "
+                             "the certificate's asset_sha256")
+    wallet, priv = _load_private(password, wallet_path)
+    if wallet["address"] != cert["issuer"]:
+        raise ValueError("issuing wallet address does not match cert['issuer'] — "
+                         "only the issuer can mint their own certificate")
+    signed_cert = sign_certificate(priv, cert) if "signature" not in cert else cert
+    if not verify_certificate_signature(signed_cert):
+        raise ValueError("certificate signature did not verify after signing")
+    sender = wallet["address"]
+    message = cert_tx_message(sender, owner_address, 0, nonce, signed_cert, None, data)
+    tx = {
+        "type": "cert-mint",
+        "sender": sender,
+        "recipient": owner_address,
+        "amount": 0,
+        "nonce": nonce,
+        "cert": signed_cert,
+        "signature": priv.sign(message.encode("utf-8")).hex(),
+        "sender_pubkey_hex": wallet["public_key_hex"],
+        "txid": cert_tx_id(sender, owner_address, 0, nonce, signed_cert, None, data),
+    }
+    if data is not None:
+        tx["data"] = data
+    return tx
+
+
+def make_cert_transfer_tx(wallet_path: str, password: str, cert: dict,
+                          to_address: str, nonce: int) -> dict:
+    """Transfer a certificate to a new owner. The wallet must be the
+    CURRENT owner — the node and the registry both check this, and
+    this function checks it too before signing."""
+    wallet, priv = _load_private(password, wallet_path)
+    if wallet["address"] != cert.get("owner"):
+        raise ValueError("transferring wallet is not the certificate's "
+                         "current owner — only the owner can transfer it")
+    if not verify_certificate_signature(cert):
+        raise ValueError("certificate issuer signature does not verify — "
+                         "refusing to transfer a bad certificate")
+    sender = wallet["address"]
+    message = cert_tx_message(sender, to_address, 0, nonce, None, cert["cert_id"], None)
+    return {
+        "type": "cert-transfer",
+        "sender": sender,
+        "recipient": to_address,
+        "amount": 0,
+        "nonce": nonce,
+        "cert_id": cert["cert_id"],
+        "cert": cert,
+        "signature": priv.sign(message.encode("utf-8")).hex(),
+        "sender_pubkey_hex": wallet["public_key_hex"],
+        "txid": cert_tx_id(sender, to_address, 0, nonce, None, cert["cert_id"], None),
+    }
+
+
+# --- certificate registry (local file, mirrors the chain state) -------
+
+def new_cert_registry() -> dict:
+    return {"chain": "Mac 'N Cheese Chain", "ticker": TICKER,
+            "certificates": {},  # cert_id -> {"cert": {...}, "owner": ..., "history": [...]}
+            "warning": "Prototype local registry only — not a live chain. "
+                       "Do not use for real funds or real legal proof."}
+
+
+def load_cert_registry(path: str) -> dict:
+    reg = json.loads(Path(path).read_text(encoding="utf-8"))
+    reg.setdefault("certificates", {})
+    return reg
+
+
+def save_cert_registry(path: str, registry: dict) -> None:
+    Path(path).write_text(json.dumps(registry, indent=2) + "\n", encoding="utf-8")
+
+
+def registry_apply_mint(registry: dict, tx: dict) -> dict:
+    """Apply a cert-mint tx to a registry. Rejects duplicates."""
+    cert = tx["cert"]
+    if cert["cert_id"] in registry["certificates"]:
+        raise ValueError(f"duplicate certificate {cert['cert_id']} — "
+                         "this asset + issuer is already certified")
+    if not verify_certificate_signature(cert):
+        raise ValueError("certificate issuer signature does not verify")
+    registry["certificates"][cert["cert_id"]] = {
+        "cert": cert, "owner": cert["owner"],
+        "history": [{"event": "minted", "owner": cert["owner"],
+                     "issued_at": cert["issued_at"], "txid": tx["txid"]}],
+    }
+    return registry["certificates"][cert["cert_id"]]
+
+
+def registry_apply_transfer(registry: dict, tx: dict) -> dict:
+    """Apply a cert-transfer tx. Rejects transfers by a non-owner."""
+    entry = registry["certificates"].get(tx["cert_id"])
+    if entry is None:
+        raise ValueError(f"unknown certificate {tx['cert_id']} — "
+                         "it was never minted (in this registry)")
+    if entry["owner"] != tx["sender"]:
+        raise ValueError(f"transfer rejected: current owner is "
+                         f"{entry['owner']}, not {tx['sender']}")
+    entry["owner"] = tx["recipient"]
+    entry["history"].append({"event": "transferred", "owner": tx["recipient"],
+                             "from": tx["sender"], "txid": tx["txid"]})
+    return entry
+
+
+def registry_owner(registry: dict, cert_id: str):
+    entry = registry["certificates"].get(cert_id)
+    return entry["owner"] if entry else None
+
+
+# ---------------------------------------------------------------------------
 # Local ledger (genesis_allocation.json) — demo accounting, no live chain yet.
 # ---------------------------------------------------------------------------
 
@@ -788,6 +1120,102 @@ def self_test():
         tx1 = make_testnet_tx(p, "test-password", w2["address"], 100, 1)
         assert "data" not in tx1
         print("21. v1 tx without payload still works (backward compatible)")
+        # Certificates / NFTs (v0.3): mint, verify, transfer, rejections.
+        import struct as _struct
+        # A minimal valid PNG (1x1) + a document + a small WAV.
+        png_cert = (b"\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR\x00\x00\x00\x01"
+                    b"\x00\x00\x00\x01\x08\x02\x00\x00\x00\x90wS\xde"
+                    b"\x00\x00\x00\x0cIDATx\x9cc\xf8\x0f\x00\x00\x01\x01"
+                    b"\x00\x05\x18\xd8N\x00\x00\x00\x00IEND\xaeB`\x82")
+        doc_cert = ("CERTIFICATE OF OWNERSHIP\nAsset: 1967 Ford Mustang, "
+                    "VIN 7T02C123456\nOwner: Mac Beck\n").encode("utf-8")
+        wav_cert = (b"RIFF" + _struct.pack("<I", 44) + b"WAVEfmt "
+                    + _struct.pack("<IHHIIHH", 16, 1, 1, 8000, 16000, 2, 16)
+                    + b"data" + _struct.pack("<I", 8) + b"\x00\x00" * 4)
+        reg = new_cert_registry()
+        # PNG certificate: issuer w, owner w2.
+        png_hash = hashlib.sha256(png_cert).hexdigest()
+        png_payload = make_media_payload(png_cert, "image", "image/png", "mustang.png")
+        cert_png = make_certificate(png_hash, w["address"], w["public_key_hex"],
+                                    w2["address"], "1967 Ford Mustang — photo",
+                                    "image", "image/png", "mustang.png")
+        mint_png = make_cert_mint_tx(p, "test-password", w2["address"], cert_png, 0, png_payload)
+        assert mint_png["type"] == "cert-mint" and mint_png["amount"] == 0
+        assert verify_certificate(mint_png["cert"], png_cert)[0]
+        assert registry_apply_mint(reg, mint_png)["owner"] == w2["address"]
+        print(f"22. PNG certificate minted + verified (cert_id "
+              f"{cert_png['cert_id'][:14]}…, asset SHA-256 matches)")
+        # Document certificate.
+        doc_hash = hashlib.sha256(doc_cert).hexdigest()
+        doc_payload = make_text_payload(doc_cert.decode("utf-8"))
+        cert_doc = make_certificate(doc_hash, w["address"], w["public_key_hex"],
+                                    w2["address"], "Mustang ownership document",
+                                    "document", "text/plain", "ownership.txt")
+        mint_doc = make_cert_mint_tx(p, "test-password", w2["address"], cert_doc, 1, doc_payload)
+        assert verify_certificate(mint_doc["cert"], doc_cert)[0]
+        registry_apply_mint(reg, mint_doc)
+        print("23. document certificate minted + verified")
+        # Audio certificate, then transfer to a third wallet.
+        wav_hash = hashlib.sha256(wav_cert).hexdigest()
+        wav_payload = make_media_payload(wav_cert, "audio", "audio/wav", "song.wav")
+        cert_wav = make_certificate(wav_hash, w["address"], w["public_key_hex"],
+                                    w2["address"], "Original song demo",
+                                    "audio", "audio/wav", "song.wav")
+        mint_wav = make_cert_mint_tx(p, "test-password", w2["address"], cert_wav, 2, wav_payload)
+        registry_apply_mint(reg, mint_wav)
+        assert verify_certificate(mint_wav["cert"], wav_cert)[0]
+        q3 = f"{d}/test-wallet-3.json"
+        w3 = create_wallet("test-password", q3)
+        xfer = make_cert_transfer_tx(q, "test-password", mint_wav["cert"], w3["address"], 0)
+        assert xfer["type"] == "cert-transfer"
+        registry_apply_transfer(reg, xfer)
+        assert registry_owner(reg, cert_wav["cert_id"]) == w3["address"]
+        ok, st = verify_certificate(mint_wav["cert"], wav_cert, current_owner=w3["address"])
+        assert ok and st["status"] == "valid"
+        print("24. audio certificate minted, transferred w2 -> w3, "
+              "verified under the new owner")
+        # Rejections: forged issuer signature.
+        forged = dict(mint_png["cert"])
+        forged["signature"] = "00" * 64
+        assert not verify_certificate_signature(forged)
+        print("25. forged issuer signature correctly rejected")
+        # Tampered asset file (hash mismatch).
+        tampered_png = bytearray(png_cert)
+        tampered_png[-1] ^= 0xFF
+        ok, st = verify_certificate(mint_png["cert"], bytes(tampered_png))
+        assert not ok and st["status"] == "asset_hash_mismatch"
+        print("26. tampered asset file correctly rejected (SHA-256 mismatch)")
+        # Duplicate certificate (same asset + same issuer).
+        try:
+            registry_apply_mint(reg, mint_png)
+            print("27. FAIL: duplicate certificate accepted!")
+            raise SystemExit(1)
+        except ValueError as e:
+            assert "duplicate" in str(e)
+            print("27. duplicate certificate correctly rejected")
+        # Transfer by a non-owner (w, the issuer, is not the owner w2).
+        try:
+            make_cert_transfer_tx(p, "test-password", mint_png["cert"], w3["address"], 5)
+            print("28. FAIL: transfer by non-owner signed!")
+            raise SystemExit(1)
+        except ValueError as e:
+            assert "not the certificate's" in str(e) or "current owner" in str(e)
+            print("28. transfer by non-owner correctly rejected")
+        # Expired certificate verifies as expired, not valid.
+        # (issued now, expiry 10 seconds ago — built via issued_at
+        #  in the past so expires_at > issued_at still holds.)
+        _now = int(__import__("time").time())
+        old = make_certificate(png_hash, w["address"], w["public_key_hex"],
+                               w2["address"], "expired example", "image",
+                               "image/png", "mustang.png",
+                               expires_at=_now - 10, issued_at=_now - 3600)
+        old_signed = sign_certificate(
+            Ed25519PrivateKey.from_private_bytes(
+                base64.b64decode(decrypt_b64("test-password", json.loads(Path(p).read_text())["encrypted_private_key"]))),
+            old)
+        ok, st = verify_certificate(old_signed, png_cert)
+        assert not ok and st["status"] == "expired"
+        print("29. expired certificate correctly reports 'expired', not valid")
     print("ALL TESTS PASSED")
 
 
@@ -808,6 +1236,9 @@ def _usage():
     print("  python3 roni_wallet.py validate-payload <payload.json>")
     print("  python3 roni_wallet.py make-tx <wallet.json> <password> <to> <amount> <nonce> [payload.json]")
     print("  python3 roni_wallet.py extract <tx.json> <output-path>")
+    print("  python3 roni_wallet.py cert-mint <wallet.json> <password> <asset-file> <owner> <description> <nonce> [--expires <unix>] [--registry certs.json]")
+    print("  python3 roni_wallet.py cert-verify <cert.json> [asset-file] [--registry certs.json]")
+    print("  python3 roni_wallet.py cert-transfer <wallet.json> <password> <cert.json> <to> <nonce> [--registry certs.json]")
 
 
 _KIND_BY_EXT = {
@@ -820,6 +1251,27 @@ _KIND_BY_EXT = {
     ".mov": ("video", "video/quicktime"),
     ".txt": ("text", "text/plain"),
 }
+
+
+def _parse_opts(argv):
+    """Parse CLI options in both `--key=value` and `--key value` form.
+
+    (The cert commands document `--registry certs.json` with a
+    space; accepting only `--key=value` silently dropped it and the
+    registry was never written — a real bug found by the CLI test.)"""
+    opts = {}
+    i = 0
+    while i < len(argv):
+        a = argv[i]
+        if a.startswith("--"):
+            if "=" in a:
+                k, v = a[2:].split("=", 1)
+                opts[k] = v
+            elif i + 1 < len(argv):
+                opts[a[2:]] = argv[i + 1]
+                i += 1
+        i += 1
+    return opts
 
 
 def _payload_file_cli(path, kind=None, mime=None):
@@ -915,6 +1367,64 @@ if __name__ == "__main__":
         try:
             print(json.dumps(extract_payload_to_file(tx["data"], args[2]), indent=2))
         except ValueError as e:
+            raise SystemExit(str(e)) from None
+    elif args[0] == "cert-mint" and len(args) >= 7:
+        opts = _parse_opts(args[7:])
+        try:
+            nonce = int(args[6])
+        except ValueError:
+            raise SystemExit("nonce must be a whole number") from None
+        try:
+            asset = Path(args[3]).read_bytes()
+            payload = _payload_file_cli(args[3])
+            # _payload_file_cli returns a text payload for .txt files;
+            # for a certificate the asset kind is "document" then.
+            asset_kind = "document" if payload["kind"] == "text" else payload["kind"]
+            wallet = show_wallet(args[1])
+            cert = make_certificate(
+                hashlib.sha256(asset).hexdigest(), wallet["address"],
+                wallet["public_key_hex"], args[4], args[5],
+                asset_kind, payload["mime"], payload.get("filename"),
+                expires_at=int(opts["expires"]) if "expires" in opts else None)
+            tx = make_cert_mint_tx(args[1], args[2], args[4], cert, nonce, payload)
+            if "registry" in opts:
+                reg = (load_cert_registry(opts["registry"])
+                       if Path(opts["registry"]).exists() else new_cert_registry())
+                registry_apply_mint(reg, tx)
+                save_cert_registry(opts["registry"], reg)
+            print(json.dumps(tx, indent=2))
+        except (ValueError, SystemExit) as e:
+            raise SystemExit(str(e)) from None
+    elif args[0] == "cert-verify" and len(args) >= 2:
+        # Parse from args[2:]: the asset file (if any) sits at
+        # args[2] and --registry may sit there too when no asset
+        # file is given. _parse_opts skips non-option words.
+        opts = _parse_opts(args[2:])
+        cert = json.loads(Path(args[1]).read_text())
+        cert = cert.get("cert", cert)  # accept a mint tx or a bare cert
+        asset = Path(args[2]).read_bytes() if len(args) >= 3 and not args[2].startswith("--") else None
+        current_owner = None
+        if "registry" in opts and Path(opts["registry"]).exists():
+            current_owner = registry_owner(load_cert_registry(opts["registry"]), cert["cert_id"])
+        ok, status = verify_certificate(cert, asset, current_owner)
+        print(json.dumps({"valid": ok, **status}, indent=2))
+        raise SystemExit(0 if ok else 1)
+    elif args[0] == "cert-transfer" and len(args) >= 6:
+        opts = _parse_opts(args[6:])
+        try:
+            nonce = int(args[5])
+        except ValueError:
+            raise SystemExit("nonce must be a whole number") from None
+        try:
+            cert = json.loads(Path(args[3]).read_text())
+            cert = cert.get("cert", cert)
+            tx = make_cert_transfer_tx(args[1], args[2], cert, args[4], nonce)
+            if "registry" in opts and Path(opts["registry"]).exists():
+                reg = load_cert_registry(opts["registry"])
+                registry_apply_transfer(reg, tx)
+                save_cert_registry(opts["registry"], reg)
+            print(json.dumps(tx, indent=2))
+        except (ValueError, SystemExit) as e:
             raise SystemExit(str(e)) from None
     else:
         _usage()

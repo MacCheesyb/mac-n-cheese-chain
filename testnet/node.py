@@ -24,6 +24,15 @@ Limits: text 1,000 chars; media 5 MB raw / 1 MB compressed
 on-chain; anything bigger is rejected (use a "ref" payload).
 See roni_wallet.py for the format and the reasons.
 
+Asset certifications / NFTs (v0.3): "cert-mint" transactions
+(amount 0) record a certificate — deterministic cert ID from
+asset SHA-256 + issuer address, issuer signature, owner, issue
+date, optional expiry — and "cert-transfer" transactions move a
+certificate to a new owner, signed by the CURRENT owner only.
+The node rejects duplicate mints, transfers by non-owners, and
+any certificate whose issuer signature does not verify. See
+testnet/test_certs.py and roni_wallet.py ("Certificates").
+
 Usage:
   python3 node.py --port 8001 --data-dir /tmp/node1 \
       --peers http://127.0.0.1:8002,http://127.0.0.1:8003 \
@@ -46,6 +55,8 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO_ROOT))
 from roni_wallet import (  # noqa: E402
     evo_hash_11, r0ni_address, testnet_tx_message, validate_payload,
+    cert_tx_message, cert_tx_id, verify_certificate_signature,
+    cert_id_for, CERT_ID_PREFIX,
 )
 
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PublicKey  # noqa: E402
@@ -75,27 +86,94 @@ def tx_message(tx):
     v1 (no "data"): sender|recipient|amount|nonce — unchanged, so
     old transactions still validate. v2 (payload): the message also
     carries the SHA-256 of the canonical payload JSON, so tampering
-    with the payload breaks the signature and the txid."""
+    with the payload breaks the signature and the txid. Certificate
+    transactions (cert-mint / cert-transfer, amount 0) are signed
+    over the cert ID + asset hash (mint) or the cert ID + TRANSFER
+    (transfer) — see roni_wallet.cert_tx_message."""
+    if tx.get("type") == "cert-mint":
+        return cert_tx_message(tx["sender"], tx["recipient"], tx["amount"],
+                               tx["nonce"], tx.get("cert"), None, tx.get("data"))
+    if tx.get("type") == "cert-transfer":
+        return cert_tx_message(tx["sender"], tx["recipient"], tx["amount"],
+                               tx["nonce"], None, tx.get("cert_id"), None)
     return testnet_tx_message(tx["sender"], tx["recipient"], tx["amount"],
                               tx["nonce"], tx.get("data"))
 
 
 def tx_id(tx):
+    if tx.get("type") == "cert-mint":
+        return cert_tx_id(tx["sender"], tx["recipient"], tx["amount"],
+                          tx["nonce"], tx.get("cert"), None, tx.get("data"))
+    if tx.get("type") == "cert-transfer":
+        return cert_tx_id(tx["sender"], tx["recipient"], tx["amount"],
+                          tx["nonce"], None, tx.get("cert_id"), None)
     return evo_hash_11(tx_message(tx).encode("utf-8")).hex()
+
+
+def verify_cert_tx(tx):
+    """Stateless checks for a certificate transaction. Returns
+    (ok, reason). Ownership and duplicate checks need chain state
+    and live in Node.validate_tx / validate_block, not here."""
+    tx_type = tx.get("type")
+    if tx_type == "cert-mint":
+        cert = tx.get("cert")
+        if not isinstance(cert, dict):
+            return False, "cert-mint needs a 'cert' object"
+        if tx["amount"] != 0:
+            return False, "cert-mint amount must be 0 — no R0NI moves, only the record"
+        if cert.get("issuer") != tx["sender"]:
+            return False, "cert issuer must be the transaction sender"
+        if cert.get("owner") != tx["recipient"]:
+            return False, "cert owner must be the transaction recipient"
+        try:
+            if cert_id_for(cert["asset_sha256"], cert["issuer"]) != cert["cert_id"]:
+                return False, "cert_id does not match asset hash + issuer"
+        except Exception as e:
+            return False, f"bad certificate: {e}"
+        if cert.get("expires_at") is not None and cert["expires_at"] <= cert["issued_at"]:
+            return False, "cert expires_at must be after issued_at"
+        if not verify_certificate_signature(cert):
+            return False, "certificate issuer signature does not verify"
+        if "data" in tx and tx["data"] is not None:
+            if tx["data"].get("sha256_of_original") != cert["asset_sha256"]:
+                return False, "payload hash does not match the certificate's asset_sha256"
+        return True, "ok"
+    if tx_type == "cert-transfer":
+        cert = tx.get("cert")
+        if not isinstance(cert, dict) or tx.get("cert_id") != cert.get("cert_id"):
+            return False, "cert-transfer needs a 'cert' matching 'cert_id'"
+        if tx["amount"] != 0:
+            return False, "cert-transfer amount must be 0 — no R0NI moves, only the record"
+        if not verify_certificate_signature(cert):
+            return False, "certificate issuer signature does not verify"
+        return True, "ok"
+    return False, f"unknown certificate transaction type {tx_type!r}"
 
 
 def verify_tx(tx):
     """Return (ok, reason). Checks address/pubkey match, signature,
     format — and, for v2 transactions, the payload (see
     roni_wallet.validate_payload): kind/mime, zlib integrity,
-    decompressed size, and SHA-256 of the original bytes."""
+    decompressed size, and SHA-256 of the original bytes. For
+    certificate transactions (cert-mint / cert-transfer) it checks
+    the certificate itself — ID derivation, issuer signature, and
+    that the payload hash matches the certified asset."""
     try:
         if set(tx) < {"sender", "recipient", "amount", "nonce", "signature", "sender_pubkey_hex"}:
             return False, "missing fields"
-        if not isinstance(tx["amount"], int) or tx["amount"] <= 0:
+        if not isinstance(tx["amount"], int) or tx["amount"] < 0:
+            return False, "amount must be a non-negative integer"
+        if tx.get("type") in ("cert-mint", "cert-transfer"):
+            if tx["amount"] != 0:
+                return False, "certificate transactions move 0 R0NI"
+        elif tx["amount"] <= 0:
             return False, "amount must be a positive integer"
         if r0ni_address(bytes.fromhex(tx["sender_pubkey_hex"])) != tx["sender"]:
             return False, "address does not match sender public key"
+        if tx.get("type") in ("cert-mint", "cert-transfer"):
+            ok, reason = verify_cert_tx(tx)
+            if not ok:
+                return False, reason
         if "data" in tx and tx["data"] is not None:
             ok, reason = validate_payload(tx["data"])
             if not ok:
@@ -147,6 +225,31 @@ class Node:
     def balance(self, address):
         return self.balances().get(address, 0)
 
+    # ---- certificates ------------------------------------------------
+    def certificates(self):
+        """cert_id -> {"cert": {...}, "owner": ..., "minted_block": int,
+        "transfers": [...]} — the current certificate state of the
+        chain. Ownership lives HERE (and in the registry), not in
+        the certificate document, which always names the owner AT
+        MINT."""
+        certs = {}
+        for block in self.chain:
+            for tx in block["transactions"]:
+                if tx.get("type") == "cert-mint":
+                    certs[tx["cert"]["cert_id"]] = {
+                        "cert": tx["cert"], "owner": tx["cert"]["owner"],
+                        "minted_block": block["index"], "transfers": []}
+                elif tx.get("type") == "cert-transfer" and tx["cert_id"] in certs:
+                    certs[tx["cert_id"]]["owner"] = tx["recipient"]
+                    certs[tx["cert_id"]]["transfers"].append(
+                        {"from": tx["sender"], "to": tx["recipient"],
+                         "txid": tx["txid"], "block": block["index"]})
+        return certs
+
+    def cert_owner(self, cert_id):
+        entry = self.certificates().get(cert_id)
+        return entry["owner"] if entry else None
+
     def sender_nonce(self, sender):
         n = 0
         for block in self.chain:
@@ -171,6 +274,25 @@ class Node:
             for c in block["transactions"]:
                 if c.get("txid") == tx["txid"]:
                     return False, "duplicate: already confirmed"
+        # Certificate state checks (ownership / duplicates need the
+        # chain, so they live here, not in stateless verify_tx).
+        if tx.get("type") == "cert-mint":
+            cert_id = tx["cert"]["cert_id"]
+            if cert_id in self.certificates():
+                return False, f"duplicate certificate {cert_id} — already minted on this chain"
+            for m in self.mempool.values():
+                if m.get("type") == "cert-mint" and m.get("cert", {}).get("cert_id") == cert_id:
+                    return False, f"duplicate certificate {cert_id} — already in mempool"
+        if tx.get("type") == "cert-transfer":
+            owner = self.cert_owner(tx["cert_id"])
+            if owner is None:
+                return False, f"unknown certificate {tx['cert_id']} — it was never minted"
+            if owner != tx["sender"]:
+                return False, (f"transfer rejected: current owner is {owner}, "
+                               f"not {tx['sender']} — only the owner can transfer")
+            for m in self.mempool.values():
+                if m.get("type") == "cert-transfer" and m.get("cert_id") == tx["cert_id"]:
+                    return False, f"certificate {tx['cert_id']} already has a pending transfer"
         if tx["nonce"] != self.sender_nonce(tx["sender"]):
             return False, f"bad nonce: expected {self.sender_nonce(tx['sender'])}, got {tx['nonce']}"
         if self.balance(tx["sender"]) - self.pending_spend(tx["sender"]) < tx["amount"]:
@@ -202,11 +324,29 @@ class Node:
             return False, "block does not meet difficulty 0000"
         # validate every tx in order against the state before this block
         bal = self.balances()
+        # Certificate ownership as of the chain tip, updated tx by tx
+        # within this block (so a mint and a later transfer in the
+        # same block validate in order, and a duplicate mint or a
+        # transfer by a non-owner inside a block is rejected).
+        cert_owners = {cid: e["owner"] for cid, e in self.certificates().items()}
         seen_nonces = {}
         for tx in block["transactions"]:
+            if tx.get("type") == "genesis":
+                continue
             ok, reason = verify_tx(tx)
             if not ok:
                 return False, f"bad tx in block: {reason}"
+            if tx.get("type") == "cert-mint":
+                cert_id = tx["cert"]["cert_id"]
+                if cert_id in cert_owners:
+                    return False, f"duplicate certificate {cert_id} in block"
+                cert_owners[cert_id] = tx["cert"]["owner"]
+            if tx.get("type") == "cert-transfer":
+                if cert_owners.get(tx["cert_id"]) != tx["sender"]:
+                    return False, (f"cert transfer in block rejected: current owner of "
+                                   f"{tx['cert_id']} is {cert_owners.get(tx['cert_id'])}, "
+                                   f"not {tx['sender']}")
+                cert_owners[tx["cert_id"]] = tx["recipient"]
             seen_nonces[tx["sender"]] = seen_nonces.get(tx["sender"], 0)
             if tx["nonce"] != sum(1 for b in self.chain for t in b["transactions"] if t.get("sender") == tx["sender"]) + seen_nonces[tx["sender"]]:
                 return False, "bad tx nonce in block"
@@ -352,6 +492,16 @@ def make_handler(node):
                 from urllib.parse import urlparse, parse_qs
                 addr = parse_qs(urlparse(self.path).query).get("address", [""])[0]
                 self.send_json({"address": addr, "balance": node.balance(addr)})
+            elif self.path == "/certs":
+                self.send_json(node.certificates())
+            elif self.path.startswith("/cert"):
+                from urllib.parse import urlparse, parse_qs
+                cert_id = parse_qs(urlparse(self.path).query).get("cert_id", [""])[0]
+                entry = node.certificates().get(cert_id)
+                if entry is None:
+                    self.send_json({"error": "certificate not found"}, 404)
+                else:
+                    self.send_json(entry)
             else:
                 self.send_json({"error": "not found"}, 404)
 

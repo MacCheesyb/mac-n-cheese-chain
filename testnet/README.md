@@ -32,6 +32,13 @@ Prototype only — not audited, no real value, do not use for real funds.
 - `run_testnet.py` — starts 3 nodes, runs 20 phase-1 transactions,
   a 30-transaction TPS burst, a node-restart sync test, and four
   security tests, then writes `analytics.json` / `ANALYTICS.md`.
+- `test_certs.py` — tests the asset certification / NFT layer
+  (v0.3): mints PNG, document and audio certificates, verifies
+  them, transfers one and verifies under the new owner, and
+  tests the rejections (forged issuer signature, tampered
+  asset, duplicate, non-owner transfer, expired) on the CLI,
+  in a local registry, and on a live single node. Results in
+  `cert_test_results.json` (21 checks, all passing).
 - `genesis.json` — the testnet genesis block (generated per run;
   addresses only, no private keys).
 - `analytics.json`, `ANALYTICS.md` — measured results from the run.
@@ -140,3 +147,55 @@ ffmpeg MP4 — all extracted byte-identical, SHA-256 matching.
 Rejections tested, all refused: oversize raw, oversize
 compressed, corrupted compressed data, SHA-256 mismatch,
 bad MIME, over-long text.
+
+## Asset certifications / NFTs — transaction types cert-mint / cert-transfer
+
+A certificate is a signed record that a real asset belongs to
+an owner at a point in time, issued by someone — the basis for
+NFTs and for certifying real-world assets and documents. It is
+built on the v2 media payloads above: the asset file travels
+in the transaction's `data` payload (inline or `ref`), and the
+certificate records only its SHA-256.
+
+**Certificate format** (see `roni_wallet.py`, "Certificates"):
+
+```json
+{"cert_id": "CERT-<40 hex of EvoHash-11(asset_sha256 + '|' + issuer)>",
+ "asset_sha256": "<64 hex of the ORIGINAL file>",
+ "asset_kind": "image|audio|video|gif|document|other",
+ "asset_mime": "image/png", "asset_filename": "mustang.png",
+ "description": "1967 Ford Mustang — photo",
+ "issuer": "R0NI-<issuer address>", "issuer_pubkey_hex": "<64 hex>",
+ "owner": "R0NI-<owner address>",
+ "issued_at": 1795154815, "expires_at": null,
+ "signature": "<Ed25519 signature over the canonical cert JSON>"}
+```
+
+**Rules the node enforces:**
+
+- `cert-mint` (amount 0 — no R0NI moves, only the record):
+  the issuer must be the transaction sender, the owner must
+  be the recipient, the cert ID must derive from the asset
+  hash + issuer, the issuer signature must verify, and the
+  payload hash (if any) must match the certified asset.
+  A mint of an already-certified asset + issuer is rejected.
+- `cert-transfer` (amount 0): signed by the CURRENT owner
+  only. The node checks the current owner from the chain
+  before accepting it, and rejects a transfer by anyone else.
+- Verification is by anyone: recompute the file's SHA-256,
+  check the cert ID and the issuer signature, and check the
+  current owner in the chain (`/certs`, `/cert?cert_id=…`).
+  An expired certificate reports "expired" — authentic, but
+  no longer current. Ownership lives in the chain, not in the
+  certificate document, which always names the owner at mint.
+
+**CLI:**
+
+```bash
+python3 roni_wallet.py cert-mint issuer.json <password> mustang.png <owner> "1967 Ford Mustang" 0 --registry certs.json
+python3 roni_wallet.py cert-verify mint-tx.json mustang.png --registry certs.json
+python3 roni_wallet.py cert-transfer owner.json <password> mint-tx.json <buyer> 0 --registry certs.json
+```
+
+**Tests:** `testnet/test_certs.py` (21 checks, all passing —
+see `testnet/cert_test_results.json`).

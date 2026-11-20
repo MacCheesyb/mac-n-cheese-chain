@@ -1,0 +1,116 @@
+{
+  "tests": [
+    {
+      "name": "png: mint + verify (asset SHA-256 matches)",
+      "passed": true,
+      "detail": "CERT-bf5cd8e6234d6aa0bfe84803cc7e9b2be2ce693a"
+    },
+    {
+      "name": "document: mint + verify (asset SHA-256 matches)",
+      "passed": true,
+      "detail": "CERT-91933dc2d876839b31538e96911ca497035b40d7"
+    },
+    {
+      "name": "audio: mint + verify (asset SHA-256 matches)",
+      "passed": true,
+      "detail": "CERT-5fbe4f4086bcaec9a5a71230955d0a1840b1817a"
+    },
+    {
+      "name": "audio: transfer owner -> buyer recorded in registry",
+      "passed": true,
+      "detail": ""
+    },
+    {
+      "name": "audio: verify under new owner after transfer",
+      "passed": true,
+      "detail": "valid"
+    },
+    {
+      "name": "reject: forged issuer signature",
+      "passed": true,
+      "detail": ""
+    },
+    {
+      "name": "reject: tampered asset file (SHA-256 mismatch)",
+      "passed": true,
+      "detail": "the file's SHA-256 does not match asset_sha256 \u2014 this is not the certified file"
+    },
+    {
+      "name": "reject: duplicate certificate",
+      "passed": true,
+      "detail": "duplicate certificate CERT-bf5cd8e6234d6aa0bfe84803cc7e9b2be2ce693a \u2014 this asset + issuer is already certified"
+    },
+    {
+      "name": "reject: transfer by non-owner",
+      "passed": true,
+      "detail": "transferring wallet is not the certificate's current owner \u2014 only the owner can transfer it"
+    },
+    {
+      "name": "reject-as-expired: past-expiry certificate reports 'expired'",
+      "passed": true,
+      "detail": "expired"
+    },
+    {
+      "name": "node: cert-mint accepted into mempool",
+      "passed": true,
+      "detail": "accepted into mempool"
+    },
+    {
+      "name": "node: cert-mint block mined",
+      "passed": true,
+      "detail": ""
+    },
+    {
+      "name": "node: cert-mint block accepted",
+      "passed": true,
+      "detail": "block accepted"
+    },
+    {
+      "name": "node: certificate owner after mint",
+      "passed": true,
+      "detail": ""
+    },
+    {
+      "name": "node: duplicate cert-mint rejected",
+      "passed": true,
+      "detail": "duplicate: already confirmed"
+    },
+    {
+      "name": "node: cert-transfer by owner accepted",
+      "passed": true,
+      "detail": "accepted into mempool"
+    },
+    {
+      "name": "node: cert-transfer block accepted",
+      "passed": true,
+      "detail": "block accepted"
+    },
+    {
+      "name": "node: certificate owner after transfer",
+      "passed": true,
+      "detail": ""
+    },
+    {
+      "name": "node: transfer by non-owner rejected",
+      "passed": true,
+      "detail": "transfer rejected: current owner is R0NI-10e722f67b08ec7e870ac7aed37499c6bcf98cb3, not R0NI-5123a999bf2be448e0b68264fcdc7824113ad6b9 \u2014 only the owner can transfer"
+    },
+    {
+      "name": "node: mint with forged issuer signature rejected",
+      "passed": true,
+      "detail": "certificate issuer signature does not verify"
+    },
+    {
+      "name": "node: /certs view shows transferred certificate",
+      "passed": true,
+      "detail": ""
+    }
+  ],
+  "passed": 21,
+  "failed": 0,
+  "cert_ids": {
+    "png": "CERT-bf5cd8e6234d6aa0bfe84803cc7e9b2be2ce693a",
+    "doc": "CERT-91933dc2d876839b31538e96911ca497035b40d7",
+    "wav": "CERT-5fbe4f4086bcaec9a5a71230955d0a1840b1817a"
+  }
+}
