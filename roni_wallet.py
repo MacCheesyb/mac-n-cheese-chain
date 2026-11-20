@@ -36,6 +36,10 @@ What it does:
     — verifiable by anyone from the file + the certificate, and
     transferable only by the current owner. The asset file itself
     travels in a v2 media payload (inline or "ref").
+  * Governance / voting (v0.4, see "Governance" below): token-
+    weighted proposals — 1 R0NI held = 1 vote, power taken from
+    the voter's balance at the proposal's snapshot block, one
+    signed vote per address, quorum + strict majority to pass.
 
 Payloads (transaction format v2 — backward compatible):
   A transaction may carry an optional "data" field:
@@ -110,6 +114,11 @@ Run:
   python3 roni_wallet.py cert-mint <wallet.json> <password> <asset-file> <owner-address> <description> <nonce> [--expires <unix>] [--registry certs.json]
   python3 roni_wallet.py cert-verify <cert.json> [asset-file] [--registry certs.json]
   python3 roni_wallet.py cert-transfer <wallet.json> <password> <cert.json> <to-address> <nonce> [--registry certs.json]
+  # Governance / voting (v0.4 — token-weighted, 1 R0NI = 1 vote):
+  python3 roni_wallet.py gov-propose <wallet.json> <password> <title> <description> <start-block> <end-block> <nonce> [--options yes,no] [--quorum N] [--ledger ledger.json] [--registry gov.json]
+  python3 roni_wallet.py gov-vote <wallet.json> <password> <proposal-id> <option> <nonce> [--registry gov.json]
+  python3 roni_wallet.py gov-tally <proposal-id> [--registry gov.json] [--height N]
+  python3 roni_wallet.py gov-list [--registry gov.json] [--height N]
 
 MetaMask note:
   MetaMask speaks EVM (Ethereum-style secp256k1 addresses,
@@ -894,6 +903,376 @@ def registry_owner(registry: dict, cert_id: str):
 
 
 # ---------------------------------------------------------------------------
+# Governance / voting — v0.4, token-weighted ("capital democracy").
+#
+# Mac's design (2026-11-20): voting power is relative to the coins
+# held in each account — 1 R0NI held = 1 vote — so majority holders
+# have more leverage over the network's direction.
+#
+#   * A proposal is filed by a "gov-propose" transaction (amount 0).
+#     Its ID is deterministic: "PROP-" + first 40 hex of
+#     EvoHash-11(title + "|" + creator + "|" + created_at). The same
+#     title + creator + timestamp always gives the same ID.
+#   * Voting power is the voter's balance AT THE SNAPSHOT: the
+#     balances as of the block the proposal was filed in
+#     (snapshot_block). Buying R0NI after a proposal starts does
+#     NOT inflate your power on that proposal.
+#   * A vote is a signed "gov-vote" transaction (amount 0) carrying
+#     proposal_id + option, signed by the voter's Ed25519 key.
+#     One vote per address per proposal — a second vote from the
+#     same address is rejected, and in v1 a vote cannot be changed
+#     after it is cast (a stated limitation, see GOVERNANCE.md).
+#   * A proposal passes only if BOTH hold at the end of its voting
+#     window: (a) total votes cast >= quorum, and (b) the winning
+#     option has a STRICT MAJORITY of the votes cast — and the
+#     winner is not the rejection option "no" (if "no" wins the
+#     majority, the proposal was voted down and fails). Quorum
+#     defaults to 10% of the genesis circulating supply (100,000
+#     R0NI to start) = 10,000 R0NI of voting power.
+#   * The voting window is [voting_start_block, voting_end_block):
+#     height is the number of blocks in the chain (genesis = 1).
+#     Votes are accepted while start <= height < end; at height
+#     >= end the proposal is closed and its result is final.
+#   * Passed proposals are NOT executed on-chain in v1 — execution
+#     is a human step for now (see GOVERNANCE.md).
+# ---------------------------------------------------------------------------
+
+GOV_ID_PREFIX = "PROP-"
+DEFAULT_QUORUM = GENESIS_SUPPLY // 10  # 10% of 100,000 = 10,000 R0NI
+MAX_GOV_TITLE_CHARS = 200
+MAX_GOV_DESCRIPTION_CHARS = 2000
+MAX_GOV_OPTIONS = 8
+
+
+def proposal_id_for(title: str, creator_address: str, created_at: int) -> str:
+    """Deterministic proposal ID from title + creator + timestamp."""
+    if not isinstance(title, str) or not title:
+        raise ValueError("title must be a non-empty string")
+    if not isinstance(creator_address, str) or not creator_address.startswith("R0NI-"):
+        raise ValueError("creator_address must be an R0NI- address")
+    material = f"{title}|{creator_address}|{int(created_at)}".encode("utf-8")
+    return GOV_ID_PREFIX + evo_hash_11(material).hex()[:40]
+
+
+def make_proposal(title: str, description: str, options, creator_address: str,
+                  creator_pubkey_hex: str, created_at=None,
+                  voting_start_block: int = 0, voting_end_block: int = 0,
+                  snapshot_block=None, quorum=None) -> dict:
+    """Build a proposal dict (unsigned). Sign it via make_gov_propose_tx()."""
+    if not isinstance(title, str) or not title or len(title) > MAX_GOV_TITLE_CHARS:
+        raise ValueError(f"title must be a non-empty string of at most {MAX_GOV_TITLE_CHARS} characters")
+    if not isinstance(description, str) or len(description) > MAX_GOV_DESCRIPTION_CHARS:
+        raise ValueError(f"description must be a string of at most {MAX_GOV_DESCRIPTION_CHARS} characters")
+    if not isinstance(options, (list, tuple)) or not 2 <= len(options) <= MAX_GOV_OPTIONS:
+        raise ValueError(f"options must be a list of 2 to {MAX_GOV_OPTIONS} choices")
+    options = [str(o) for o in options]
+    if any(not o for o in options) or len(set(options)) != len(options):
+        raise ValueError("options must be non-empty and unique")
+    if not isinstance(creator_address, str) or not creator_address.startswith("R0NI-"):
+        raise ValueError("creator_address must be an R0NI- address")
+    try:
+        if r0ni_address(bytes.fromhex(creator_pubkey_hex)) != creator_address:
+            raise ValueError("creator_pubkey_hex does not derive to creator_address")
+    except ValueError:
+        raise
+    except Exception as e:
+        raise ValueError(f"bad creator_pubkey_hex: {e}") from None
+    created = int(created_at) if created_at is not None else int(__import__("time").time())
+    voting_start_block = int(voting_start_block)
+    voting_end_block = int(voting_end_block)
+    if voting_start_block < 0 or voting_end_block <= voting_start_block:
+        raise ValueError("need 0 <= voting_start_block < voting_end_block")
+    quorum = DEFAULT_QUORUM if quorum is None else int(quorum)
+    if quorum <= 0:
+        raise ValueError("quorum must be a positive number of R0NI of voting power")
+    if snapshot_block is not None:
+        snapshot_block = int(snapshot_block)
+        if snapshot_block < 0:
+            raise ValueError("snapshot_block must be a non-negative block height")
+    return {
+        "proposal_id": proposal_id_for(title, creator_address, created),
+        "title": title,
+        "description": description,
+        "options": options,
+        "creator": creator_address,
+        "creator_pubkey_hex": creator_pubkey_hex,
+        "created_at": created,
+        "voting_start_block": voting_start_block,
+        "voting_end_block": voting_end_block,
+        "snapshot_block": snapshot_block,
+        "quorum": quorum,
+        "status": "open",
+    }
+
+
+def validate_proposal(proposal) -> tuple:
+    """Validate a proposal dict. Returns (True, "ok") or (False, reason)."""
+    if not isinstance(proposal, dict):
+        return False, "proposal must be an object"
+    try:
+        rebuilt = make_proposal(
+            proposal.get("title"), proposal.get("description"),
+            proposal.get("options"), proposal.get("creator"),
+            proposal.get("creator_pubkey_hex"), proposal.get("created_at"),
+            proposal.get("voting_start_block"), proposal.get("voting_end_block"),
+            proposal.get("snapshot_block"), proposal.get("quorum"))
+    except (ValueError, TypeError, KeyError) as e:
+        return False, f"invalid proposal: {e}"
+    if rebuilt["proposal_id"] != proposal.get("proposal_id"):
+        return False, "proposal_id does not match title + creator + created_at"
+    return True, "ok"
+
+
+def gov_propose_message(proposal: dict) -> str:
+    """The message the creator signs: canonical JSON of the proposal.
+
+    The whole proposal is signed, so the title, options, voting
+    window or quorum cannot be swapped without breaking the
+    signature and the txid."""
+    return json.dumps(proposal, sort_keys=True, separators=(",", ":"))
+
+
+def gov_propose_tx_id(sender: str, proposal: dict, nonce: int) -> str:
+    """Transaction ID for a gov-propose tx. The nonce is part of
+    the ID (but NOT of the signed message — the signature covers
+    the proposal itself), so filing the SAME proposal twice with
+    different nonces gives two distinct transactions and the node
+    can reject the second as a duplicate PROPOSAL rather than as
+    a duplicate txid. Without the nonce here, both filings would
+    hash to the same txid and the duplicate-proposal check could
+    never be reached."""
+    return evo_hash_11(
+        f"{sender}|{int(nonce)}|{gov_propose_message(proposal)}".encode("utf-8")).hex()
+
+
+def gov_vote_message(sender: str, proposal_id: str, option: str) -> str:
+    """The message a voter signs: sender|GOV-VOTE|proposal_id|option."""
+    return f"{sender}|GOV-VOTE|{proposal_id}|{option}"
+
+
+def gov_vote_tx_id(sender: str, proposal_id: str, option: str) -> str:
+    return evo_hash_11(gov_vote_message(sender, proposal_id, option).encode("utf-8")).hex()
+
+
+def make_gov_propose_tx(wallet_path: str, password: str, title: str,
+                        description: str, options, voting_start_block: int,
+                        voting_end_block: int, nonce: int, quorum=None,
+                        created_at=None, snapshot_block=None) -> dict:
+    """File a proposal: a signed gov-propose transaction (amount 0).
+
+    The wallet is the CREATOR: its address must be the proposal's
+    creator and its key signs the whole proposal. The recipient of
+    the transaction is the proposal ID itself (no R0NI moves — the
+    proposal is a record, not a payment)."""
+    wallet, priv = _load_private(password, wallet_path)
+    proposal = make_proposal(title, description, options, wallet["address"],
+                             wallet["public_key_hex"], created_at,
+                             voting_start_block, voting_end_block,
+                             snapshot_block, quorum)
+    message = gov_propose_message(proposal)
+    return {
+        "type": "gov-propose",
+        "sender": wallet["address"],
+        "recipient": proposal["proposal_id"],
+        "amount": 0,
+        "nonce": nonce,
+        "proposal": proposal,
+        "signature": priv.sign(message.encode("utf-8")).hex(),
+        "sender_pubkey_hex": wallet["public_key_hex"],
+        "txid": gov_propose_tx_id(wallet["address"], proposal, nonce),
+    }
+
+
+def make_gov_vote_tx(wallet_path: str, password: str, proposal_id: str,
+                     option: str, nonce: int) -> dict:
+    """Cast a vote: a signed gov-vote transaction (amount 0).
+
+    The recipient is the proposal ID (no R0NI moves). The node
+    checks the proposal exists, the vote is inside its window,
+    the voter held a balance at the snapshot, and the address has
+    not already voted on this proposal. This function does NOT
+    check those — it only signs; the node / registry enforces."""
+    if not isinstance(proposal_id, str) or not proposal_id.startswith(GOV_ID_PREFIX):
+        raise ValueError("proposal_id must start with 'PROP-'")
+    if not isinstance(option, str) or not option:
+        raise ValueError("option must be a non-empty string")
+    wallet, priv = _load_private(password, wallet_path)
+    sender = wallet["address"]
+    message = gov_vote_message(sender, proposal_id, option)
+    return {
+        "type": "gov-vote",
+        "sender": sender,
+        "recipient": proposal_id,
+        "amount": 0,
+        "nonce": nonce,
+        "proposal_id": proposal_id,
+        "option": option,
+        "signature": priv.sign(message.encode("utf-8")).hex(),
+        "sender_pubkey_hex": wallet["public_key_hex"],
+        "txid": gov_vote_tx_id(sender, proposal_id, option),
+    }
+
+
+def tally_proposal(proposal: dict, votes, snapshot_balances: dict) -> dict:
+    """Tally a proposal from its votes and its snapshot balances.
+
+    Voting power is 1 R0NI = 1 vote, taken from the SNAPSHOT
+    balances — never from balances at tally time. Only the FIRST
+    vote from each address counts (the node rejects later ones,
+    but the tally is defensive too); votes for an option that is
+    not on the proposal, and votes from addresses with zero
+    snapshot balance, are ignored. A proposal passes only if
+    total votes cast >= quorum AND the winning option has a
+    STRICT MAJORITY of the votes cast (a tie for first place
+    means no winner, so it fails) AND the winner is not the
+    rejection option "no" — if "no" wins the majority, the
+    proposal was voted down and fails. For custom options with
+    no "no" on the ballot, a majority winner adopts the decision.
+    """
+    options = list(proposal.get("options", []))
+    per_option = {o: 0 for o in options}
+    seen = set()
+    counted_votes = 0
+    for vote in votes or []:
+        sender = vote.get("sender")
+        option = vote.get("option")
+        if sender in seen or option not in per_option:
+            continue
+        power = int((snapshot_balances or {}).get(sender, 0))
+        if power <= 0:
+            continue
+        seen.add(sender)
+        per_option[option] += power
+        counted_votes += 1
+    total = sum(per_option.values())
+    quorum = int(proposal.get("quorum", DEFAULT_QUORUM))
+    quorum_met = total >= quorum
+    ranked = sorted(per_option.items(), key=lambda kv: kv[1], reverse=True)
+    winner, winning_power = ranked[0] if ranked else (None, 0)
+    # Strict majority: the winner must beat ALL other options
+    # combined — a tie for first place is not a majority.
+    majority_met = (winner is not None and winning_power > total - winning_power)
+    # What "passed" means: quorum met AND a strict majority winner,
+    # AND that winner is not the rejection option. A literal "no"
+    # option (the default second option) is the rejection: if "no"
+    # wins the majority, the proposal FAILS — the thing proposed
+    # was voted down. For custom options with no "no" on the ballot
+    # (e.g. choosing a max supply), a majority winner means the
+    # decision is adopted and the proposal passes.
+    passed = quorum_met and majority_met and (winner is None or winner.lower() != "no")
+    return {
+        "proposal_id": proposal.get("proposal_id"),
+        "per_option": per_option,
+        "total_voting_power": total,
+        "votes_counted": counted_votes,
+        "quorum": quorum,
+        "quorum_met": quorum_met,
+        "winner": winner if majority_met else None,
+        "winning_power": winning_power,
+        "majority_met": majority_met,
+        "passed": passed,
+        "result": "passed" if passed else "failed",
+    }
+
+
+def proposal_status(proposal: dict, votes, snapshot_balances: dict,
+                    current_height=None) -> str:
+    """'open' while height < voting_end_block, else the tally result.
+
+    current_height is the number of blocks in the chain (genesis
+    = 1). With no height given, the tally result is returned
+    (what the outcome WOULD be if voting closed now)."""
+    if current_height is not None and int(current_height) < int(proposal["voting_end_block"]):
+        return "open"
+    return tally_proposal(proposal, votes, snapshot_balances)["result"]
+
+
+# --- governance registry (local file, mirrors the chain state) ------
+
+def new_gov_registry() -> dict:
+    return {"chain": "Mac 'N Cheese Chain", "ticker": TICKER,
+            "proposals": {},  # proposal_id -> {"proposal", "snapshot_balances", "votes": [...]}
+            "warning": "Prototype local registry only — not a live chain. "
+                       "Do not use for real funds or real legal proof."}
+
+
+def load_gov_registry(path: str) -> dict:
+    reg = json.loads(Path(path).read_text(encoding="utf-8"))
+    reg.setdefault("proposals", {})
+    return reg
+
+
+def save_gov_registry(path: str, registry: dict) -> None:
+    Path(path).write_text(json.dumps(registry, indent=2) + "\n", encoding="utf-8")
+
+
+def registry_apply_propose(registry: dict, tx: dict, snapshot_balances=None) -> dict:
+    """Apply a gov-propose tx to a registry. Rejects duplicates and
+    proposals whose creator signature does not verify."""
+    proposal = tx.get("proposal")
+    ok, reason = validate_proposal(proposal)
+    if not ok:
+        raise ValueError(reason)
+    if proposal["proposal_id"] in registry["proposals"]:
+        raise ValueError(f"duplicate proposal {proposal['proposal_id']} — already filed")
+    if proposal["creator"] != tx.get("sender"):
+        raise ValueError("proposal creator must be the transaction sender")
+    if tx.get("recipient") != proposal["proposal_id"] or tx.get("amount") != 0:
+        raise ValueError("gov-propose tx must have amount 0 and the proposal ID as recipient")
+    if not verify_signature(tx["sender_pubkey_hex"], gov_propose_message(proposal), tx["signature"]):
+        raise ValueError("proposal creator signature does not verify")
+    if r0ni_address(bytes.fromhex(tx["sender_pubkey_hex"])) != tx["sender"]:
+        raise ValueError("address does not match sender public key")
+    entry = {"proposal": proposal,
+             "snapshot_balances": dict(snapshot_balances or {}),
+             "votes": []}
+    registry["proposals"][proposal["proposal_id"]] = entry
+    return entry
+
+
+def registry_apply_vote(registry: dict, tx: dict) -> dict:
+    """Apply a gov-vote tx. Rejects votes on unknown proposals,
+    votes for options that are not on the proposal, duplicate
+    votes from the same address, and votes from addresses with
+    zero balance at the snapshot."""
+    pid = tx.get("proposal_id")
+    entry = registry["proposals"].get(pid)
+    if entry is None:
+        raise ValueError(f"unknown proposal {pid} — it was never filed (in this registry)")
+    proposal = entry["proposal"]
+    if tx.get("option") not in proposal["options"]:
+        raise ValueError(f"option {tx.get('option')!r} is not on proposal {pid} "
+                         f"(options: {proposal['options']})")
+    if tx.get("amount") != 0 or tx.get("recipient") != pid:
+        raise ValueError("gov-vote tx must have amount 0 and the proposal ID as recipient")
+    if not verify_signature(tx["sender_pubkey_hex"],
+                            gov_vote_message(tx["sender"], pid, tx["option"]),
+                            tx["signature"]):
+        raise ValueError("vote signature does not verify")
+    if r0ni_address(bytes.fromhex(tx["sender_pubkey_hex"])) != tx["sender"]:
+        raise ValueError("address does not match sender public key")
+    if any(v["sender"] == tx["sender"] for v in entry["votes"]):
+        raise ValueError(f"duplicate vote: {tx['sender']} has already voted on {pid} "
+                         "— one vote per address, and votes cannot be changed in v1")
+    if int(entry["snapshot_balances"].get(tx["sender"], 0)) <= 0:
+        raise ValueError(f"voter {tx['sender']} held 0 R0NI at the snapshot — "
+                         "zero-balance addresses cannot vote")
+    entry["votes"].append(tx)
+    return entry
+
+
+def registry_tally(registry: dict, proposal_id: str, current_height=None) -> dict:
+    """Tally a proposal in a registry, with its status at a height."""
+    entry = registry["proposals"].get(proposal_id)
+    if entry is None:
+        raise ValueError(f"unknown proposal {proposal_id}")
+    tally = tally_proposal(entry["proposal"], entry["votes"], entry["snapshot_balances"])
+    tally["status"] = proposal_status(entry["proposal"], entry["votes"],
+                                      entry["snapshot_balances"], current_height)
+    return tally
+
+
+# ---------------------------------------------------------------------------
 # Local ledger (genesis_allocation.json) — demo accounting, no live chain yet.
 # ---------------------------------------------------------------------------
 
@@ -1216,6 +1595,122 @@ def self_test():
         ok, st = verify_certificate(old_signed, png_cert)
         assert not ok and st["status"] == "expired"
         print("29. expired certificate correctly reports 'expired', not valid")
+        # Governance / voting (v0.4): proposal ID, tally, registry rules.
+        prop_a = make_proposal("Set max supply to 10B", "Should the max supply be 10B R0NI?",
+                               ["yes", "no"], w["address"], w["public_key_hex"],
+                               created_at=1795132723, voting_start_block=1,
+                               voting_end_block=10)
+        prop_b = make_proposal("Set max supply to 10B", "Should the max supply be 10B R0NI?",
+                               ["yes", "no"], w["address"], w["public_key_hex"],
+                               created_at=1795132723, voting_start_block=1,
+                               voting_end_block=10)
+        assert prop_a["proposal_id"] == prop_b["proposal_id"] and prop_a["proposal_id"].startswith("PROP-")
+        prop_c = make_proposal("Set max supply to 1B", "Should the max supply be 1B R0NI?",
+                               ["yes", "no"], w["address"], w["public_key_hex"],
+                               created_at=1795132723, voting_start_block=1,
+                               voting_end_block=10)
+        assert prop_c["proposal_id"] != prop_a["proposal_id"]
+        assert validate_proposal(prop_a)[0]
+        assert prop_a["quorum"] == 10000  # default: 10% of 100,000 genesis supply
+        print(f"30. proposal ID deterministic ({prop_a['proposal_id'][:14]}…), quorum defaults to 10,000 R0NI")
+        # Whale vs small holders: one 10,000 holder beats ten 100 holders.
+        smalls = []
+        for i in range(10):
+            sp = f"{d}/small-{i}.json"
+            smalls.append(create_wallet("test-password", sp))
+        snapshot = {w["address"]: 10000}
+        snapshot.update({s["address"]: 100 for s in smalls})
+        propose_tx = make_gov_propose_tx(p, "test-password", "Set max supply to 10B",
+                                         "Should the max supply be 10B R0NI?",
+                                         ["yes", "no"], 1, 10, 3)
+        assert propose_tx["type"] == "gov-propose" and propose_tx["amount"] == 0
+        assert propose_tx["txid"] == gov_propose_tx_id(w["address"], propose_tx["proposal"], 3)
+        assert verify_signature(propose_tx["sender_pubkey_hex"],
+                                gov_propose_message(propose_tx["proposal"]),
+                                propose_tx["signature"])
+        print("31. gov-propose tx signed over the whole proposal, txid matches")
+        gov_reg = new_gov_registry()
+        registry_apply_propose(gov_reg, propose_tx, snapshot)
+        whale_vote = make_gov_vote_tx(p, "test-password", propose_tx["proposal"]["proposal_id"], "yes", 4)
+        registry_apply_vote(gov_reg, whale_vote)
+        for i, s in enumerate(smalls):
+            registry_apply_vote(gov_reg, make_gov_vote_tx(
+                f"{d}/small-{i}.json", "test-password",
+                propose_tx["proposal"]["proposal_id"], "no", 0))
+        tally = registry_tally(gov_reg, propose_tx["proposal"]["proposal_id"], current_height=3)
+        assert tally["per_option"] == {"yes": 10000, "no": 1000}, tally
+        assert tally["total_voting_power"] == 11000 and tally["quorum_met"]
+        assert tally["winner"] == "yes" and tally["passed"] and tally["status"] == "open"
+        print("32. whale tally: yes 10,000 vs no 1,000 (10 x 100) — whale wins, "
+              "quorum 10,000 met, still open at height 3")
+        tally_closed = registry_tally(gov_reg, propose_tx["proposal"]["proposal_id"], current_height=10)
+        assert tally_closed["status"] == "passed"
+        print("33. same tally at height 10 (end block) closes as 'passed'")
+        # Duplicate vote from the same address is rejected.
+        try:
+            registry_apply_vote(gov_reg, make_gov_vote_tx(
+                p, "test-password", propose_tx["proposal"]["proposal_id"], "no", 5))
+            print("34. FAIL: duplicate vote accepted!")
+            raise SystemExit(1)
+        except ValueError as e:
+            assert "duplicate vote" in str(e)
+            print("34. duplicate vote from the same address correctly rejected")
+        # Zero-balance address cannot vote.
+        broke = create_wallet("test-password", f"{d}/broke.json")
+        try:
+            registry_apply_vote(gov_reg, make_gov_vote_tx(
+                f"{d}/broke.json", "test-password",
+                propose_tx["proposal"]["proposal_id"], "yes", 0))
+            print("35. FAIL: zero-balance vote accepted!")
+            raise SystemExit(1)
+        except ValueError as e:
+            assert "0 R0NI at the snapshot" in str(e)
+            print("35. zero-balance voter correctly rejected")
+        # Forged vote signature: signed by another key, claiming to be the whale.
+        forged_vote = make_gov_vote_tx(f"{d}/small-0.json", "test-password",
+                                       propose_tx["proposal"]["proposal_id"], "yes", 1)
+        forged_vote["sender"] = w["address"]
+        forged_vote["sender_pubkey_hex"] = w["public_key_hex"]
+        assert not verify_signature(forged_vote["sender_pubkey_hex"],
+                                    gov_vote_message(forged_vote["sender"],
+                                                     forged_vote["proposal_id"],
+                                                     forged_vote["option"]),
+                                    forged_vote["signature"])
+        print("36. forged vote signature correctly fails verification")
+        # Quorum not met: only the small holders vote -> 1,000 < 10,000.
+        gov_reg2 = new_gov_registry()
+        registry_apply_propose(gov_reg2, make_gov_propose_tx(
+            p, "test-password", "Set max supply to 1B", "Should it be 1B?",
+            ["yes", "no"], 1, 10, 6), snapshot)
+        pid2 = gov_reg2["proposals"] and list(gov_reg2["proposals"])[0]
+        for i, s in enumerate(smalls):
+            registry_apply_vote(gov_reg2, make_gov_vote_tx(
+                f"{d}/small-{i}.json", "test-password", pid2, "yes", 1))
+        t2 = registry_tally(gov_reg2, pid2, current_height=10)
+        assert t2["total_voting_power"] == 1000 and not t2["quorum_met"]
+        assert t2["status"] == "failed"
+        print("37. quorum not met (1,000 < 10,000) -> proposal fails at close")
+        # Majority no: whale votes no, smalls vote yes -> no wins, fails.
+        gov_reg3 = new_gov_registry()
+        registry_apply_propose(gov_reg3, make_gov_propose_tx(
+            p, "test-password", "Set max supply to 100B", "Should it be 100B?",
+            ["yes", "no"], 1, 10, 7), snapshot)
+        pid3 = list(gov_reg3["proposals"])[0]
+        registry_apply_vote(gov_reg3, make_gov_vote_tx(p, "test-password", pid3, "no", 8))
+        for i, s in enumerate(smalls):
+            registry_apply_vote(gov_reg3, make_gov_vote_tx(
+                f"{d}/small-{i}.json", "test-password", pid3, "yes", 2))
+        t3 = registry_tally(gov_reg3, pid3, current_height=10)
+        assert t3["winner"] == "no" and t3["status"] == "failed"
+        print("38. majority 'no' (10,000 vs 1,000) -> proposal fails at close")
+        # Snapshot power: a voter who buys AFTER the proposal starts
+        # still votes with their snapshot balance, not the new one.
+        late_snapshot = {w["address"]: 100, w2["address"]: 5000}
+        late_votes = [make_gov_vote_tx(p, "test-password", pid3, "yes", 9)]
+        t4 = tally_proposal(gov_reg3["proposals"][pid3]["proposal"], late_votes, late_snapshot)
+        assert t4["per_option"]["yes"] == 100  # snapshot 100, not a later 10,000
+        print("39. snapshot power: voter counts at their snapshot balance (100), "
+              "not at a balance bought after the proposal started")
     print("ALL TESTS PASSED")
 
 
@@ -1239,6 +1734,10 @@ def _usage():
     print("  python3 roni_wallet.py cert-mint <wallet.json> <password> <asset-file> <owner> <description> <nonce> [--expires <unix>] [--registry certs.json]")
     print("  python3 roni_wallet.py cert-verify <cert.json> [asset-file] [--registry certs.json]")
     print("  python3 roni_wallet.py cert-transfer <wallet.json> <password> <cert.json> <to> <nonce> [--registry certs.json]")
+    print("  python3 roni_wallet.py gov-propose <wallet.json> <password> <title> <description> <start-block> <end-block> <nonce> [--options yes,no] [--quorum N] [--ledger ledger.json] [--registry gov.json]")
+    print("  python3 roni_wallet.py gov-vote <wallet.json> <password> <proposal-id> <option> <nonce> [--registry gov.json]")
+    print("  python3 roni_wallet.py gov-tally <proposal-id> [--registry gov.json] [--height N]")
+    print("  python3 roni_wallet.py gov-list [--registry gov.json] [--height N]")
 
 
 _KIND_BY_EXT = {
@@ -1426,5 +1925,77 @@ if __name__ == "__main__":
             print(json.dumps(tx, indent=2))
         except (ValueError, SystemExit) as e:
             raise SystemExit(str(e)) from None
+    elif args[0] == "gov-propose" and len(args) >= 8:
+        opts = _parse_opts(args[8:])
+        try:
+            start, end, nonce = int(args[5]), int(args[6]), int(args[7])
+        except ValueError:
+            raise SystemExit("start-block, end-block and nonce must be whole numbers") from None
+        try:
+            options = opts["options"].split(",") if "options" in opts else ["yes", "no"]
+            quorum = int(opts["quorum"]) if "quorum" in opts else None
+            snapshot_balances = None
+            if "ledger" in opts:
+                ledger = load_ledger(opts["ledger"])
+                addrs = {a.get("address") for a in ledger.get("allocations", [])}
+                addrs |= {t.get("from") for t in ledger.get("transfers", [])}
+                addrs |= {t.get("to") for t in ledger.get("transfers", [])}
+                snapshot_balances = {a: ledger_balance(ledger, a) for a in addrs if a}
+            tx = make_gov_propose_tx(args[1], args[2], args[3], args[4], options,
+                                     start, end, nonce, quorum=quorum)
+            if "registry" in opts:
+                reg = (load_gov_registry(opts["registry"])
+                       if Path(opts["registry"]).exists() else new_gov_registry())
+                registry_apply_propose(reg, tx, snapshot_balances)
+                save_gov_registry(opts["registry"], reg)
+            print(json.dumps(tx, indent=2))
+        except (ValueError, SystemExit) as e:
+            raise SystemExit(str(e)) from None
+    elif args[0] == "gov-vote" and len(args) >= 6:
+        opts = _parse_opts(args[6:])
+        try:
+            nonce = int(args[5])
+        except ValueError:
+            raise SystemExit("nonce must be a whole number") from None
+        try:
+            tx = make_gov_vote_tx(args[1], args[2], args[3], args[4], nonce)
+            if "registry" in opts and Path(opts["registry"]).exists():
+                reg = load_gov_registry(opts["registry"])
+                registry_apply_vote(reg, tx)
+                save_gov_registry(opts["registry"], reg)
+            print(json.dumps(tx, indent=2))
+        except (ValueError, SystemExit) as e:
+            raise SystemExit(str(e)) from None
+    elif args[0] == "gov-tally" and len(args) >= 2:
+        opts = _parse_opts(args[2:])
+        path = opts.get("registry", "gov.json")
+        if not Path(path).exists():
+            raise SystemExit(f"no governance registry at {path} — file one with gov-propose --registry {path} first")
+        reg = load_gov_registry(path)
+        try:
+            height = int(opts["height"]) if "height" in opts else None
+            print(json.dumps(registry_tally(reg, args[1], height), indent=2))
+        except ValueError as e:
+            raise SystemExit(str(e)) from None
+    elif args[0] == "gov-list" and len(args) >= 1:
+        opts = _parse_opts(args[1:])
+        path = opts.get("registry", "gov.json")
+        if not Path(path).exists():
+            raise SystemExit(f"no governance registry at {path} — file one with gov-propose --registry {path} first")
+        reg = load_gov_registry(path)
+        height = int(opts["height"]) if "height" in opts else None
+        out = []
+        for pid, entry in reg["proposals"].items():
+            tally = registry_tally(reg, pid, height)
+            out.append({"proposal_id": pid, "title": entry["proposal"]["title"],
+                        "options": entry["proposal"]["options"],
+                        "voting_start_block": entry["proposal"]["voting_start_block"],
+                        "voting_end_block": entry["proposal"]["voting_end_block"],
+                        "quorum": entry["proposal"]["quorum"],
+                        "votes_cast": tally["votes_counted"],
+                        "total_voting_power": tally["total_voting_power"],
+                        "per_option": tally["per_option"],
+                        "status": tally["status"]})
+        print(json.dumps(out, indent=2))
     else:
         _usage()

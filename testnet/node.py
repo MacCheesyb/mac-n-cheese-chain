@@ -33,6 +33,21 @@ The node rejects duplicate mints, transfers by non-owners, and
 any certificate whose issuer signature does not verify. See
 testnet/test_certs.py and roni_wallet.py ("Certificates").
 
+Governance / voting (v0.4): "gov-propose" transactions (amount 0)
+file a proposal — deterministic PROP- ID, options, voting window
+[start, end), quorum (default 10% of genesis supply = 10,000
+R0NI) — and "gov-vote" transactions (amount 0) cast one signed
+vote per address. Voting power is 1 R0NI = 1 vote, taken from the
+voter's balance at the proposal's SNAPSHOT (the balances as of
+the block the proposal was filed in), so buying after a proposal
+starts does not inflate power. The node rejects votes on unknown
+or out-of-window proposals, duplicate votes, votes from
+zero-balance-at-snapshot addresses, and any vote whose signature
+does not verify. A proposal passes only if total votes >= quorum
+AND the winning option has a strict majority — and the winner is
+not the rejection option "no". See testnet/test_governance.py
+and roni_wallet.py ("Governance") and GOVERNANCE.md.
+
 Usage:
   python3 node.py --port 8001 --data-dir /tmp/node1 \
       --peers http://127.0.0.1:8002,http://127.0.0.1:8003 \
@@ -57,6 +72,9 @@ from roni_wallet import (  # noqa: E402
     evo_hash_11, r0ni_address, testnet_tx_message, validate_payload,
     cert_tx_message, cert_tx_id, verify_certificate_signature,
     cert_id_for, CERT_ID_PREFIX,
+    gov_propose_message, gov_propose_tx_id, gov_vote_message,
+    gov_vote_tx_id, validate_proposal, tally_proposal,
+    proposal_status, GOV_ID_PREFIX, DEFAULT_QUORUM,
 )
 
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PublicKey  # noqa: E402
@@ -89,13 +107,20 @@ def tx_message(tx):
     with the payload breaks the signature and the txid. Certificate
     transactions (cert-mint / cert-transfer, amount 0) are signed
     over the cert ID + asset hash (mint) or the cert ID + TRANSFER
-    (transfer) — see roni_wallet.cert_tx_message."""
+    (transfer) — see roni_wallet.cert_tx_message. Governance
+    transactions (gov-propose / gov-vote, amount 0): a proposal is
+    signed over its whole canonical JSON, a vote over
+    sender|GOV-VOTE|proposal_id|option — see roni_wallet."""
     if tx.get("type") == "cert-mint":
         return cert_tx_message(tx["sender"], tx["recipient"], tx["amount"],
                                tx["nonce"], tx.get("cert"), None, tx.get("data"))
     if tx.get("type") == "cert-transfer":
         return cert_tx_message(tx["sender"], tx["recipient"], tx["amount"],
                                tx["nonce"], None, tx.get("cert_id"), None)
+    if tx.get("type") == "gov-propose":
+        return gov_propose_message(tx["proposal"])
+    if tx.get("type") == "gov-vote":
+        return gov_vote_message(tx["sender"], tx["proposal_id"], tx["option"])
     return testnet_tx_message(tx["sender"], tx["recipient"], tx["amount"],
                               tx["nonce"], tx.get("data"))
 
@@ -107,6 +132,10 @@ def tx_id(tx):
     if tx.get("type") == "cert-transfer":
         return cert_tx_id(tx["sender"], tx["recipient"], tx["amount"],
                           tx["nonce"], None, tx.get("cert_id"), None)
+    if tx.get("type") == "gov-propose":
+        return gov_propose_tx_id(tx["sender"], tx["proposal"], tx["nonce"])
+    if tx.get("type") == "gov-vote":
+        return gov_vote_tx_id(tx["sender"], tx["proposal_id"], tx["option"])
     return evo_hash_11(tx_message(tx).encode("utf-8")).hex()
 
 
@@ -150,6 +179,39 @@ def verify_cert_tx(tx):
     return False, f"unknown certificate transaction type {tx_type!r}"
 
 
+def verify_gov_tx(tx):
+    """Stateless checks for a governance transaction. Returns
+    (ok, reason). Proposal existence, voting window, snapshot
+    balance and duplicate votes need chain state and live in
+    Node.validate_tx / validate_block, not here."""
+    tx_type = tx.get("type")
+    if tx_type == "gov-propose":
+        proposal = tx.get("proposal")
+        if not isinstance(proposal, dict):
+            return False, "gov-propose needs a 'proposal' object"
+        ok, reason = validate_proposal(proposal)
+        if not ok:
+            return False, reason
+        if tx["amount"] != 0:
+            return False, "gov-propose amount must be 0 — no R0NI moves, only the record"
+        if proposal.get("creator") != tx["sender"]:
+            return False, "proposal creator must be the transaction sender"
+        if tx.get("recipient") != proposal["proposal_id"]:
+            return False, "gov-propose recipient must be the proposal ID"
+        return True, "ok"
+    if tx_type == "gov-vote":
+        if tx["amount"] != 0:
+            return False, "gov-vote amount must be 0 — no R0NI moves, only the vote"
+        if not isinstance(tx.get("proposal_id"), str) or not tx["proposal_id"].startswith(GOV_ID_PREFIX):
+            return False, "gov-vote needs a proposal_id starting with 'PROP-'"
+        if tx.get("recipient") != tx["proposal_id"]:
+            return False, "gov-vote recipient must be the proposal ID"
+        if not isinstance(tx.get("option"), str) or not tx["option"]:
+            return False, "gov-vote needs a non-empty option"
+        return True, "ok"
+    return False, f"unknown governance transaction type {tx_type!r}"
+
+
 def verify_tx(tx):
     """Return (ok, reason). Checks address/pubkey match, signature,
     format — and, for v2 transactions, the payload (see
@@ -166,12 +228,19 @@ def verify_tx(tx):
         if tx.get("type") in ("cert-mint", "cert-transfer"):
             if tx["amount"] != 0:
                 return False, "certificate transactions move 0 R0NI"
+        elif tx.get("type") in ("gov-propose", "gov-vote"):
+            if tx["amount"] != 0:
+                return False, "governance transactions move 0 R0NI"
         elif tx["amount"] <= 0:
             return False, "amount must be a positive integer"
         if r0ni_address(bytes.fromhex(tx["sender_pubkey_hex"])) != tx["sender"]:
             return False, "address does not match sender public key"
         if tx.get("type") in ("cert-mint", "cert-transfer"):
             ok, reason = verify_cert_tx(tx)
+            if not ok:
+                return False, reason
+        if tx.get("type") in ("gov-propose", "gov-vote"):
+            ok, reason = verify_gov_tx(tx)
             if not ok:
                 return False, reason
         if "data" in tx and tx["data"] is not None:
@@ -250,6 +319,60 @@ class Node:
         entry = self.certificates().get(cert_id)
         return entry["owner"] if entry else None
 
+    # ---- governance --------------------------------------------------
+    def proposals(self):
+        """proposal_id -> {"proposal": {...}, "snapshot_balances": {...},
+        "snapshot_block": int, "votes": [...]} — the current
+        governance state of the chain. The SNAPSHOT is the balances
+        as of the block the proposal was filed in: the replay takes
+        the balances at the moment the gov-propose tx is reached
+        (amount 0, so filing a proposal moves nothing), and later
+        transfers never change it — buying after a proposal starts
+        does not inflate voting power on it."""
+        proposals = {}
+        bal = {}
+        for block in self.chain:
+            for tx in block["transactions"]:
+                if tx.get("type") == "genesis":
+                    bal[tx["recipient"]] = bal.get(tx["recipient"], 0) + tx["amount"]
+                elif tx.get("type") == "gov-propose":
+                    pid = tx["proposal"]["proposal_id"]
+                    if pid not in proposals:
+                        proposals[pid] = {
+                            "proposal": tx["proposal"],
+                            "snapshot_balances": dict(bal),
+                            "snapshot_block": block["index"],
+                            "votes": []}
+                elif tx.get("type") == "gov-vote":
+                    entry = proposals.get(tx["proposal_id"])
+                    if entry is not None:
+                        entry["votes"].append(tx)
+                else:
+                    bal[tx["sender"]] = bal.get(tx["sender"], 0) - tx["amount"]
+                    bal[tx["recipient"]] = bal.get(tx["recipient"], 0) + tx["amount"]
+        return proposals
+
+    def proposal(self, proposal_id):
+        return self.proposals().get(proposal_id)
+
+    def proposal_tally(self, proposal_id):
+        """Tally + status for one proposal at the current height
+        (height = number of blocks in the chain, genesis = 1)."""
+        entry = self.proposal(proposal_id)
+        if entry is None:
+            return None
+        tally = tally_proposal(entry["proposal"], entry["votes"],
+                               entry["snapshot_balances"])
+        tally["status"] = proposal_status(entry["proposal"], entry["votes"],
+                                          entry["snapshot_balances"], len(self.chain))
+        tally["snapshot_block"] = entry["snapshot_block"]
+        tally["votes"] = entry["votes"]
+        return tally
+
+    def chain_height(self):
+        """Current height: number of blocks in the chain (genesis = 1)."""
+        return len(self.chain)
+
     def sender_nonce(self, sender):
         n = 0
         for block in self.chain:
@@ -293,6 +416,48 @@ class Node:
             for m in self.mempool.values():
                 if m.get("type") == "cert-transfer" and m.get("cert_id") == tx["cert_id"]:
                     return False, f"certificate {tx['cert_id']} already has a pending transfer"
+        # Governance state checks (proposal existence, voting window,
+        # snapshot balance and one-vote-per-address need the chain).
+        if tx.get("type") == "gov-propose":
+            pid = tx["proposal"]["proposal_id"]
+            if pid in self.proposals():
+                return False, f"duplicate proposal {pid} — already filed on this chain"
+            for m in self.mempool.values():
+                if m.get("type") == "gov-propose" and m.get("proposal", {}).get("proposal_id") == pid:
+                    return False, f"duplicate proposal {pid} — already in mempool"
+            if tx["proposal"]["voting_start_block"] < self.chain_height():
+                return False, (f"proposal voting_start_block "
+                               f"{tx['proposal']['voting_start_block']} is in the past "
+                               f"(chain height is {self.chain_height()})")
+        if tx.get("type") == "gov-vote":
+            entry = self.proposal(tx["proposal_id"])
+            if entry is None:
+                return False, (f"unknown proposal {tx['proposal_id']} — it was never "
+                               "filed (or is still only in the mempool)")
+            proposal = entry["proposal"]
+            height = self.chain_height()
+            if not (proposal["voting_start_block"] <= height < proposal["voting_end_block"]):
+                return False, (f"vote outside voting window: proposal "
+                               f"{tx['proposal_id']} votes in blocks "
+                               f"[{proposal['voting_start_block']}, "
+                               f"{proposal['voting_end_block']}), chain height is {height}")
+            if tx["option"] not in proposal["options"]:
+                return False, (f"option {tx['option']!r} is not on proposal "
+                               f"{tx['proposal_id']} (options: {proposal['options']})")
+            if any(v["sender"] == tx["sender"] for v in entry["votes"]):
+                return False, (f"duplicate vote: {tx['sender']} has already voted on "
+                               f"{tx['proposal_id']} — one vote per address, and votes "
+                               "cannot be changed in v1")
+            for m in self.mempool.values():
+                if (m.get("type") == "gov-vote"
+                        and m.get("proposal_id") == tx["proposal_id"]
+                        and m.get("sender") == tx["sender"]):
+                    return False, (f"duplicate vote: {tx['sender']} already has a "
+                                   f"pending vote on {tx['proposal_id']}")
+            if int(entry["snapshot_balances"].get(tx["sender"], 0)) <= 0:
+                return False, (f"voter {tx['sender']} held 0 R0NI at the snapshot "
+                               f"(block {entry['snapshot_block']}) — zero-balance "
+                               "addresses cannot vote")
         if tx["nonce"] != self.sender_nonce(tx["sender"]):
             return False, f"bad nonce: expected {self.sender_nonce(tx['sender'])}, got {tx['nonce']}"
         if self.balance(tx["sender"]) - self.pending_spend(tx["sender"]) < tx["amount"]:
@@ -329,6 +494,20 @@ class Node:
         # same block validate in order, and a duplicate mint or a
         # transfer by a non-owner inside a block is rejected).
         cert_owners = {cid: e["owner"] for cid, e in self.certificates().items()}
+        # Governance state as of the chain tip, updated tx by tx
+        # within this block: proposals filed in this block get their
+        # snapshot from the balances at that point in the replay,
+        # and votes in this block are checked against it — so a
+        # proposal and its first votes can land in the same block,
+        # and a duplicate vote inside a block is rejected.
+        gov_state = {}
+        for pid, entry in self.proposals().items():
+            gov_state[pid] = {
+                "proposal": entry["proposal"],
+                "snapshot_balances": dict(entry["snapshot_balances"]),
+                "voters": {v["sender"] for v in entry["votes"]},
+            }
+        height = block["index"]  # == len(self.chain) for the next block
         seen_nonces = {}
         for tx in block["transactions"]:
             if tx.get("type") == "genesis":
@@ -347,6 +526,42 @@ class Node:
                                    f"{tx['cert_id']} is {cert_owners.get(tx['cert_id'])}, "
                                    f"not {tx['sender']}")
                 cert_owners[tx["cert_id"]] = tx["recipient"]
+            if tx.get("type") == "gov-propose":
+                pid = tx["proposal"]["proposal_id"]
+                ok, reason = validate_proposal(tx["proposal"])
+                if not ok:
+                    return False, f"bad proposal in block: {reason}"
+                if pid in gov_state:
+                    return False, f"duplicate proposal {pid} in block"
+                if tx["proposal"]["creator"] != tx["sender"]:
+                    return False, "proposal creator in block is not the sender"
+                if tx["proposal"]["voting_start_block"] < height:
+                    return False, (f"proposal {pid} in block starts voting at block "
+                                   f"{tx['proposal']['voting_start_block']}, before this "
+                                   f"block {height}")
+                gov_state[pid] = {
+                    "proposal": tx["proposal"],
+                    "snapshot_balances": dict(bal),
+                    "voters": set(),
+                }
+            if tx.get("type") == "gov-vote":
+                pid = tx["proposal_id"]
+                entry = gov_state.get(pid)
+                if entry is None:
+                    return False, f"vote in block for unknown proposal {pid}"
+                proposal = entry["proposal"]
+                if not (proposal["voting_start_block"] <= height < proposal["voting_end_block"]):
+                    return False, (f"vote in block outside voting window for {pid}: "
+                                   f"blocks [{proposal['voting_start_block']}, "
+                                   f"{proposal['voting_end_block']}), this block {height}")
+                if tx["option"] not in proposal["options"]:
+                    return False, f"vote in block for option {tx['option']!r} not on {pid}"
+                if tx["sender"] in entry["voters"]:
+                    return False, f"duplicate vote in block: {tx['sender']} already voted on {pid}"
+                if int(entry["snapshot_balances"].get(tx["sender"], 0)) <= 0:
+                    return False, (f"vote in block from zero-balance-at-snapshot address "
+                                   f"{tx['sender']} on {pid}")
+                entry["voters"].add(tx["sender"])
             seen_nonces[tx["sender"]] = seen_nonces.get(tx["sender"], 0)
             if tx["nonce"] != sum(1 for b in self.chain for t in b["transactions"] if t.get("sender") == tx["sender"]) + seen_nonces[tx["sender"]]:
                 return False, "bad tx nonce in block"
@@ -502,6 +717,38 @@ def make_handler(node):
                     self.send_json({"error": "certificate not found"}, 404)
                 else:
                     self.send_json(entry)
+            elif self.path == "/proposals":
+                out = []
+                for pid, entry in node.proposals().items():
+                    tally = node.proposal_tally(pid)
+                    out.append({"proposal_id": pid,
+                                "proposal": entry["proposal"],
+                                "snapshot_block": entry["snapshot_block"],
+                                "tally": {k: v for k, v in tally.items() if k != "votes"},
+                                "status": tally["status"]})
+                self.send_json(out)
+            elif self.path.startswith("/proposal"):
+                from urllib.parse import urlparse, parse_qs
+                pid = parse_qs(urlparse(self.path).query).get("proposal_id", [""])[0]
+                entry = node.proposal(pid)
+                if entry is None:
+                    self.send_json({"error": "proposal not found"}, 404)
+                else:
+                    tally = node.proposal_tally(pid)
+                    self.send_json({"proposal": entry["proposal"],
+                                    "snapshot_block": entry["snapshot_block"],
+                                    "snapshot_balances": entry["snapshot_balances"],
+                                    "votes": entry["votes"],
+                                    "tally": tally,
+                                    "status": tally["status"]})
+            elif self.path.startswith("/tally"):
+                from urllib.parse import urlparse, parse_qs
+                pid = parse_qs(urlparse(self.path).query).get("proposal_id", [""])[0]
+                tally = node.proposal_tally(pid)
+                if tally is None:
+                    self.send_json({"error": "proposal not found"}, 404)
+                else:
+                    self.send_json({k: v for k, v in tally.items() if k != "votes"})
             else:
                 self.send_json({"error": "not found"}, 404)
 
