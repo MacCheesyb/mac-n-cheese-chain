@@ -16,7 +16,7 @@ button { margin-top: 8px; margin-right: 6px; }
 </style>
 </head>
 <body>
-<h1>R0NI Wallet — v0.3</h1>
+<h1>R0NI Wallet — v0.4</h1>
 <p class="sub">Mac 'N Cheese Chain • Own extension first</p>
 
 <div id="locked">
@@ -46,16 +46,19 @@ button { margin-top: 8px; margin-right: 6px; }
 <p id="status">Locked. Create a wallet with a password, or unlock an existing one.</p>
 
 <p class="note">Prototype only — not audited. Do not use for real funds.
-v0.3 stores the private key encrypted at rest in this browser with
+v0.4 stores the private key encrypted at rest in this browser with
 AES-GCM, unlocked by your password (PBKDF2, 100,000 iterations).
 Balance comes from a local ledger file you load — there is no node
 yet. If this wallet is the genesis holder in that ledger, the
 balance is 100,000 R0NI; otherwise it is the ledger balance, or 0.
-Address here is an interim SHA-512 address, labelled in the code —
-the canonical EvoHash-11 address from roni_wallet.py is not yet
-implemented in the browser. Unifying the two is still open work.
+Address here is now the canonical EvoHash-11 address — the same
+address roni_wallet.py gives for the same key (see evo-hash-11.js).
+Wallets created by v0.3 with the old interim SHA-512 address are
+migrated automatically on load, and their ledger entries are
+rewritten to the new address, so a genesis allocation is not lost.
 No node or transaction sending yet — sending lives in
 wallet-app.html in the repo root.</p>
+<script src="evo-hash-11.js"></script>
 <script src="popup.js"></script>
 </body>
 </html>

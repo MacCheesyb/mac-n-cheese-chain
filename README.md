@@ -66,8 +66,10 @@ for now. Pick one of these — they all use the same local ledger format
    `create`, `show`, `sign`, `verify`, `init-ledger`,
    `allocate-genesis`, `balance`, and `transfer`. Addresses here are
    the canonical EvoHash-11 addresses (`R0NI-` + EvoHash-11 of the
-   public key). The browser / app addresses are an interim SHA-512
-   form and will differ for the same key — unifying them is open work.
+   public key). The browser extension and the wallet app now use the
+   SAME canonical address (unified 2026-11-19, extension v0.4 /
+   wallet-app.html v0.4, via the vendored `@noble/hashes` 1.8.0
+   EvoHash-11 bundle in `extension/evo-hash-11.js`).
 
 ### Genesis allocation — empty until Mac creates his wallet
 
@@ -77,6 +79,18 @@ Mac. The 100,000 R0NI genesis supply is allocated to the first wallet
 Mac creates in the wallet app (or with
 `roni_wallet.py allocate-genesis`), and only once — a second allocation
 is rejected by the CLI and by the app.
+
+**Migration (2026-11-19):** the first wallet was already created
+before the address was unified, with the old interim SHA-512 address,
+and its genesis allocation was recorded against that interim address.
+The extension v0.4 and wallet-app.html v0.4 migrate it automatically
+on load: the address is recomputed from the stored public key with
+EvoHash-11, and ledger allocation / transfer entries naming the old
+address are rewritten to the new canonical address for the same key.
+The balance does not change, and migration is idempotent — a wallet
+already at the canonical address is left alone. No address is
+hard-coded anywhere in this repo; migration always uses whatever
+wallet is stored on the device being migrated.
 
 ## Design direction — Mac, 2026-11-19
 

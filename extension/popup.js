@@ -1,7 +1,7 @@
-// R0NI Wallet popup — v0.3, own extension first.
+// R0NI Wallet popup — v0.4, own extension first.
 // Real WebCrypto work, prototype only — not audited, do not use for real funds.
 //
-// What v0.3 does:
+// What v0.4 does:
 //  - Create an Ed25519 keypair with WebCrypto
 //  - Encrypt the private key at rest with AES-GCM, key from PBKDF2(password)
 //    100,000 iterations, SHA-256, random salt + IV per wallet
@@ -14,15 +14,20 @@
 //    otherwise it shows the balance computed from the ledger's
 //    allocations + transfers, or 0 when no ledger is loaded.
 //    There is no node yet — the ledger is a local file.
+//  - Unified address (new in v0.4): "R0NI-" + first 40 hex of
+//    EvoHash-11(public key), the SAME canonical address as
+//    roni_wallet.py. Implemented with the vendored EvoHash-11 bundle
+//    in evo-hash-11.js (@noble/hashes 1.8.0, no CDN, no network).
+//    Verified against Python on 6 test vectors, including the
+//    0x11*32 key -> R0NI-d867166b51a61bcbd4c498524fb8cd3008514823.
+//  - Migration (new in v0.4): wallets created by v0.3 with the old
+//    interim SHA-512 address are migrated on load — see
+//    migrateInterimAddress() below. The same key now gives the
+//    canonical address, and ledger entries for the old address are
+//    rewritten to the new one, so a genesis allocation keeps working.
 //
-// What v0.3 does NOT do:
+// What v0.4 does NOT do:
 //  - No node / transaction sending yet (sending lives in wallet-app.html)
-//  - Address is interim: "R0NI-" + first 40 hex of SHA-512(public key).
-//    The canonical address in roni_wallet.py is EvoHash-11(public key).
-//    WebCrypto has no SHA3 / BLAKE2, so full EvoHash-11 in the browser
-//    is still v0.3 work — it was not finished in this version, and
-//    unifying the two addresses remains open. Do not mix extension
-//    addresses with Python wallet addresses — they differ for the same key.
 //  - Signing happens in the popup only; the background worker holds no keys.
 //
 // Ticker: R0NI (renamed 2026-11-19 from RONI — 0 in place of O — to
@@ -76,9 +81,57 @@ async function deriveKey(password, salt) {
     base, { name: 'AES-GCM', length: 256 }, false, ['encrypt', 'decrypt']);
 }
 
-async function interimAddress(publicKeyRaw) {
-  const digest = await crypto.subtle.digest('SHA-512', publicKeyRaw);
-  return 'R0NI-' + bufToHex(digest).slice(0, 40);
+// Canonical address: "R0NI-" + first 40 hex of EvoHash-11(public key),
+// exactly as roni_wallet.py. Synchronous — the vendored bundle in
+// evo-hash-11.js (loaded before this file in popup.html) exposes
+// global EvoHash11.r0niAddress(). Throws if the bundle did not load.
+function canonicalAddress(publicKeyRaw) {
+  if (typeof EvoHash11 === 'undefined' || !EvoHash11.r0niAddress) {
+    throw new Error('EvoHash-11 bundle (evo-hash-11.js) did not load.');
+  }
+  return EvoHash11.r0niAddress(publicKeyRaw);
+}
+function hexToBytes(hex) {
+  return Uint8Array.from(hex.match(/../g), (h) => parseInt(h, 16));
+}
+
+// Migration for wallets created by v0.3 (or earlier) with the interim
+// SHA-512 address ("R0NI-" + first 40 hex of SHA-512(public key)).
+// The same key now produces the canonical EvoHash-11 address, so:
+//   1. recompute the address from the stored public key,
+//   2. update the stored wallet address,
+//   3. rewrite any local ledger allocation / transfer entries that
+//      name the old interim address to the new canonical address
+//      (same key, same wallet — the genesis 100,000 R0NI allocation
+//      recorded against the old address moves with it, so the balance
+//      stays 100,000).
+// Returns { migrated: bool, oldAddress, newAddress }. No-op when the
+// stored address is already canonical, or when there is no wallet.
+async function migrateInterimAddress() {
+  const { roniWallet, r0niLedger } = await store.get(['roniWallet', 'r0niLedger']);
+  if (!roniWallet || !roniWallet.publicKeyHex) return { migrated: false };
+  let newAddress;
+  try {
+    newAddress = canonicalAddress(hexToBytes(roniWallet.publicKeyHex));
+  } catch (e) {
+    return { migrated: false };
+  }
+  const oldAddress = roniWallet.address;
+  if (oldAddress === newAddress) return { migrated: false, oldAddress, newAddress };
+  roniWallet.address = newAddress;
+  const updates = { roniWallet };
+  if (r0niLedger) {
+    for (const a of r0niLedger.allocations || []) {
+      if (a.address === oldAddress) a.address = newAddress;
+    }
+    for (const tx of r0niLedger.transfers || []) {
+      if (tx.from === oldAddress) tx.from = newAddress;
+      if (tx.to === oldAddress) tx.to = newAddress;
+    }
+    updates.r0niLedger = r0niLedger;
+  }
+  await store.set(updates);
+  return { migrated: true, oldAddress, newAddress };
 }
 
 function ledgerBalance(ledger, address) {
@@ -124,7 +177,7 @@ async function createWallet() {
   const iv = crypto.getRandomValues(new Uint8Array(12));
   const aesKey = await deriveKey(password, salt);
   const encrypted = await crypto.subtle.encrypt({ name: 'AES-GCM', iv }, aesKey, privRaw);
-  const address = await interimAddress(pubRaw);
+  const address = canonicalAddress(pubRaw);
   await store.set({
     roniWallet: {
       address,
@@ -138,7 +191,7 @@ async function createWallet() {
   $('address').textContent = address;
   $('lock').disabled = false;
   await refreshBalance();
-  setStatus('Wallet created and encrypted in this browser. Address is interim SHA-512 — see note below.');
+  setStatus('Wallet created and encrypted in this browser. Address is the canonical EvoHash-11 address — the same as roni_wallet.py gives for this key.');
 }
 
 async function unlockWallet() {
@@ -199,10 +252,19 @@ async function loadLedgerFile(file) {
 }
 
 async function init() {
+  // Migrate a v0.3 interim-address wallet to the canonical address
+  // before anything reads the stored address or balance.
+  const migration = await migrateInterimAddress();
   const { roniWallet } = await store.get(['roniWallet']);
   if (roniWallet) {
     $('address').textContent = roniWallet.address + ' (locked)';
-    setStatus('Wallet found in this browser. Enter your password and Unlock.');
+    if (migration.migrated) {
+      setStatus('Migrated this wallet from its old interim address ('
+        + migration.oldAddress + ') to the canonical EvoHash-11 address ('
+        + migration.newAddress + '). Ledger entries were rewritten, so the balance is unchanged. Enter your password and Unlock.');
+    } else {
+      setStatus('Wallet found in this browser. Enter your password and Unlock.');
+    }
   }
   await refreshBalance();
   $('create').addEventListener('click', createWallet);
