@@ -1,0 +1,24 @@
+{
+  "index": 0,
+  "timestamp": 1795151261,
+  "previous_hash": "00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000",
+  "transactions": [
+    {
+      "type": "genesis",
+      "recipient": "R0NI-427251d46f133a875584fcd19b75519c7a83ebb4",
+      "amount": 1000000
+    },
+    {
+      "type": "genesis",
+      "recipient": "R0NI-559403bef31f8454d0fc23110e684285809982e5",
+      "amount": 1000000
+    },
+    {
+      "type": "genesis",
+      "recipient": "R0NI-c6825566a36c9d249b3923b00c5457f5686edc08",
+      "amount": 1000000
+    }
+  ],
+  "nonce": 17934,
+  "hash": "0000114fc654a21cd630a90cf6ec25313bec92522b026d2734c9a1c7f18596be32975866cc7bfd6b1f0d1b002458951f6515d41b0b22af1329e9744722ec7309"
+}
