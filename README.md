@@ -1,9 +1,15 @@
-# Mac 'N Cheese Chain — RONI
+# Mac 'N Cheese Chain — R0NI
 
-Prototype blockchain by Mac (MacCheezyb) and Destiny's Child.
+Prototype blockchain by Mac (MacCheesyb) and Destiny's Child.
 Built from the EvoCrypt / ai.evo work: an X11-style 11-step hash chain.
 
-**Status: prototype only — not audited, no real value, do not use for real secrets or real money. RONI is NOT backed today.**
+**Status: prototype only — not audited, no real value, do not use for real secrets or real money. R0NI is NOT backed today.**
+
+**Ticker rename (2026-11-19): RONI → R0NI** — the number 0 in place of
+the letter O, to avoid confusion with an existing RONI token on another
+chain. Everything current-facing now says R0NI. The Genesis Block 0
+hashed data still reads "RONI" — it is a historical record, and changing
+it would change the block hash, so Block 0 was NOT re-mined.
 
 ## What is here
 
@@ -11,12 +17,17 @@ Built from the EvoCrypt / ai.evo work: an X11-style 11-step hash chain.
 - `evochain_genesis_block.json` — the mined genesis block
 - `evocrypt_hybrid_v02.py` — EvoCrypt Hybrid Prototype v0.2 (EvoKDF-11, AES-256-GCM + ChaCha20-Poly1305, HMAC-SHA3-512)
 - `evocrypt_hybrid_prototype.py` — EvoCrypt v0.1
-- `EVOCHAIN-WHITE-PAPER-DRAFT.md` — white paper draft (v0.2 in progress, see PDF)
+- `roni_wallet.py` — R0NI Wallet v0.2 (CLI, Ed25519, EvoHash-11 addresses, local ledger)
+- `genesis_allocation.json` — local ledger: genesis supply, allocations, signed transfers
+- `wallet-app.html` — **downloadable wallet app** (single file, works offline): create wallet, send / receive, paper wallet with QR codes, export / import
+- `extension/` — R0NI Wallet browser extension v0.3 (Manifest V3)
+- `EVOCHAIN-WHITE-PAPER-DRAFT.md` — white paper draft (see PDF, Draft v0.4)
+- `logo-options/roni-logo-r0ni.webp` — R0NI logo (slashed zero)
 
 ## Genesis Block 0 — verified (restarted 2026-11-19, supersedes earlier Block 0s)
 
 - Chain: Mac 'N Cheese Chain
-- Ticker: RONI
+- Ticker: R0NI (formerly RONI — the genesis data below still says RONI, see above)
 - Timestamp: 1795132723 — 2026-11-19T23:58:43Z / 2026-11-19 15:58:43 PST
 - Data: `Mac 'N Cheese Chain genesis — RONI — circulating supply 100000 to start — created by Mac & Destiny's Child in ai.evo`
 - Previous hash: 128 zeros
@@ -24,7 +35,7 @@ Built from the EvoCrypt / ai.evo work: an X11-style 11-step hash chain.
 - Difficulty: hash starts with `0000`
 - Hash: `0000adbc0f16c14cc2540a4a259339fd0b02a1503bad43f0bbb484eb5007c36d68f9d825875297db1b26be6eb2a0532496c6a31317f6ce9a9fc7cf6a8591c1b0`
 - Hash function: EvoHash-11 — 1-pass EvoKDF-11 chain from ai.evo / EvoCrypt v0.2
-- Circulating supply to start: 100,000 RONI
+- Circulating supply to start: 100,000 R0NI
 
 Superseded blocks, kept for audit only — not live:
 - Mac 'N Cheese Chain Block 0 (no supply in data): 2026-11-19 15:57:37 PST, nonce 112867,
@@ -32,27 +43,63 @@ Superseded blocks, kept for audit only — not live:
 - EvoChain Block 0: 2026-11-19 15:47:05 PST, nonce 4452,
   hash `000002d7954aef129e29b68b19fa44156d104edde9a335071a8c20267e83162683aab5e9d2428200ac8061b996f529e6aa51b6f1aa1e70d4a71d89df1a9ea06b`
 
+## Wallet — how to get on board
+
+There is no network / node yet, so wallets and balances live locally
+for now. Pick one of these — they all use the same local ledger format
+(`genesis_allocation.json`):
+
+1. **Wallet app (easiest):** download `wallet-app.html` from this repo
+   and open it in any modern browser — it works offline, straight from
+   the file. Create a wallet with a password (Ed25519 key, private key
+   encrypted with AES-GCM). The **first wallet created is the genesis
+   holder: it is allocated the 100,000 R0NI genesis supply** in the
+   local ledger. From there you can send R0NI (signed, balance-checked,
+   recorded in the ledger), receive (address + QR code), and print a
+   **paper wallet** — address and public key with QR codes, plus the
+   encrypted private key (your password is still required to use it).
+   Export the wallet and ledger files to back them up or move them.
+2. **Browser extension:** load `extension/` unpacked in Chrome / Edge /
+   Brave. Same key storage, plus a balance display from a ledger file
+   you load. No sending yet — sending lives in the wallet app.
+3. **Command line:** `python3 roni_wallet.py` — see its usage for
+   `create`, `show`, `sign`, `verify`, `init-ledger`,
+   `allocate-genesis`, `balance`, and `transfer`. Addresses here are
+   the canonical EvoHash-11 addresses (`R0NI-` + EvoHash-11 of the
+   public key). The browser / app addresses are an interim SHA-512
+   form and will differ for the same key — unifying them is open work.
+
+### Genesis allocation — empty until Mac creates his wallet
+
+`genesis_allocation.json` in this repo has `"allocations": []` on
+purpose. No address is pre-filled and no wallet has been created for
+Mac. The 100,000 R0NI genesis supply is allocated to the first wallet
+Mac creates in the wallet app (or with
+`roni_wallet.py allocate-genesis`), and only once — a second allocation
+is rejected by the CLI and by the app.
+
 ## Design direction — Mac, 2026-11-19
 
 - **Mobile-lightweight:** EvoHash-11 is CPU-only, stdlib hashes, 1 pass,
   no ASIC/GPU/large-memory requirement. Genesis difficulty `0000` is
   phone-feasible in a demo. Difficulty must adjust before any real
   network, or phones would be outrun.
-- **Circulating supply to start:** 100,000 RONI, set by Mac 2026-11-19.
+- **Circulating supply to start:** 100,000 R0NI, set by Mac 2026-11-19.
   Recorded in the hashed genesis data, so this is the live Block 0.
-- **Max supply — proposal only, not final:** 10,000,000,000 RONI (10B).
-  Proposed so more people can acquire RONI and use it, driving utility
+- **Max supply — proposal only, not final:** 10,000,000,000 R0NI (10B).
+  Proposed so more people can acquire R0NI and use it, driving utility
   and demand. Not hashed into Block 0, so it can change without
   re-mining. Alternatives: 1B / 10B / 100B — Mac to confirm.
   100,000 to start is 0.001% of the 10B proposal.
 - **Backing — roadmap only:** Mac wants real-world physical + digital
   assets to back value where possible. That needs custodians, audits,
-  and legal structure — none exist yet. Do NOT claim RONI is backed.
-- **First trade pair — proposal:** RONI/USD first, before any other pair.
+  and legal structure — none exist yet. Do NOT claim R0NI is backed.
+- **First trade pair — proposal:** R0NI/USD first, before any other pair.
   Needs an exchange listing, liquidity, and compliance — not built yet.
 - **Ticker note:** RONI already exists as a tiny token on another chain
-  (51 holders, ~$6,248 market cap, checked 2026-11-19). Mac chose to
-  proceed with RONI for this chain anyway.
+  (51 holders, ~$6,248 market cap, checked 2026-11-19). The ticker for
+  this chain was therefore changed to R0NI (0 in place of O) on
+  2026-11-19 to avoid collisions and confusion.
 
 ## Run it
 
@@ -63,6 +110,10 @@ python3 evochain_genesis.py
 That re-mines a genesis block with the current time. To verify the saved block,
 the script's `verify()` recomputes the hash from the header and checks the
 `0000` prefix and the all-zero previous hash.
+
+```bash
+python3 roni_wallet.py            # self-test: wallet + ledger
+```
 
 ## EvoHash-11
 
@@ -88,9 +139,9 @@ Do not treat this as open-source permission until he chooses one.
 
 - Max supply: confirm 10B, or pick 1B / 100B?
 - Purpose: learning/demo, payments, data, or something else?
-- Block reward / emission: how is RONI issued after Block 0?
+- Block reward / emission: how is R0NI issued after Block 0?
 - Consensus: stay proof-of-work, add difficulty adjustment, block time target?
-- Transactions and wallets: what goes in a block's data, and how are keys handled?
+- Transactions and wallets: what goes in a block's data, and how are keys handled? (Local ledger exists now — a live chain / node is the next step.)
 - Network: stay single-node, or add peers, nodes, and sync?
 - Backing: which physical / digital assets, who custodies, who audits?
-- Repo: public or private on GitHub once the account exists?
+- License: choose one, or keep the repo unlicensed?

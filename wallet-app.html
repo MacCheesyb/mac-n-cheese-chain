@@ -1,0 +1,427 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>R0NI Wallet — Mac 'N Cheese Chain</title>
+<style>
+  body { font-family: sans-serif; max-width: 640px; margin: 0 auto; padding: 16px; background: #1a1c54; color: #f5f0e6; }
+  h1 { color: #f8b83c; margin-bottom: 0; }
+  .sub { color: #c9c4e8; margin-top: 4px; }
+  section { background: #26295e; border-radius: 10px; padding: 14px; margin-top: 14px; }
+  label { display: block; font-size: 13px; margin-top: 10px; }
+  input, textarea, button { font-size: 15px; padding: 8px; margin-top: 4px; }
+  input, textarea { width: 100%; box-sizing: border-box; border-radius: 6px; border: 1px solid #555; }
+  button { background: #f8b83c; border: none; border-radius: 6px; font-weight: bold; cursor: pointer; margin-right: 6px; }
+  button.secondary { background: #c9c4e8; }
+  .mono { word-break: break-all; font-family: monospace; font-size: 13px; }
+  #status { font-size: 14px; margin-top: 10px; }
+  .note { font-size: 13px; color: #c9c4e8; }
+  .big { font-size: 22px; font-weight: bold; color: #f8b83c; }
+  table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  td, th { border-bottom: 1px solid #444; padding: 4px; text-align: left; word-break: break-all; }
+  #paper { background: #fff; color: #111; padding: 20px; border-radius: 8px; }
+  #paper h2 { color: #1a1c54; }
+  #paper canvas { background: #fff; }
+  @media print {
+    body { background: #fff; color: #111; }
+    body * { visibility: hidden; }
+    #paper, #paper * { visibility: visible; }
+    #paper { position: absolute; left: 0; top: 0; width: 100%; }
+    .no-print { display: none !important; }
+  }
+</style>
+</head>
+<body>
+<h1>R0NI Wallet</h1>
+<p class="sub">Mac 'N Cheese Chain • R0NI • Downloadable wallet app — works offline from this file</p>
+<p class="note"><strong>Prototype only — not audited. Do not use for real funds.</strong>
+Ticker R0NI (renamed 2026-11-19 from RONI — 0 in place of O). The first wallet
+created in this app is the genesis holder: it is allocated the 100,000 R0NI
+genesis supply in the local ledger. There is no network yet — balances and
+transfers live in a local ledger file you can export.</p>
+
+<section>
+  <h2>Your wallet</h2>
+  <label>Wallet password (at least 8 characters — needed to unlock and send)
+    <input id="password" type="password" autocomplete="off">
+  </label>
+  <button id="create">Create wallet</button>
+  <button id="unlock">Unlock</button>
+  <button id="lock">Lock</button>
+  <button id="deleteWallet" class="secondary">Delete wallet</button>
+  <p>Address: <span id="address" class="mono">No wallet yet</span></p>
+  <p>Balance: <span id="balance" class="big">—</span></p>
+  <p id="status">Locked. Create a wallet with a password, or unlock an existing one.</p>
+</section>
+
+<section>
+  <h2>Send R0NI</h2>
+  <label>To address (R0NI-…)
+    <input id="toAddress" type="text" placeholder="R0NI-…" autocomplete="off">
+  </label>
+  <label>Amount (whole R0NI)
+    <input id="amount" type="number" min="1" step="1" placeholder="100">
+  </label>
+  <button id="send">Sign &amp; send (local ledger)</button>
+  <p class="note">Sending signs a transfer message with your key, verifies the
+  signature, checks your ledger balance, and records the transfer in the
+  local ledger. Nothing leaves this device.</p>
+</section>
+
+<section>
+  <h2>Receive</h2>
+  <p>Share your address — or the QR code — with the sender:</p>
+  <p class="mono" id="receiveAddress">No wallet yet</p>
+  <canvas id="receiveQr" width="220" height="220"></canvas>
+</section>
+
+<section>
+  <h2>Transactions (local ledger)</h2>
+  <table id="txTable"><tr><th>From</th><th>To</th><th>Amount</th></tr></table>
+</section>
+
+<section>
+  <h2>Paper wallet &amp; backup</h2>
+  <p class="note">Print this section and keep it somewhere safe. It shows your
+  address and public key (with QR codes) and your <em>encrypted</em> private
+  key — the password is still required to use it, so keep the password
+  separate from the paper. Never print or share an unencrypted private key.</p>
+  <div id="paper">
+    <h2>R0NI Paper Wallet — Mac 'N Cheese Chain</h2>
+    <p><strong>Address:</strong> <span id="paperAddress" class="mono">—</span></p>
+    <canvas id="paperQrAddress" width="200" height="200"></canvas>
+    <p><strong>Public key (hex):</strong> <span id="paperPub" class="mono">—</span></p>
+    <canvas id="paperQrPub" width="200" height="200"></canvas>
+    <p><strong>Encrypted private key (needs your password):</strong></p>
+    <p id="paperEnc" class="mono">—</p>
+    <p class="note">Prototype only — not audited. Do not use for real funds.
+    Genesis supply: 100,000 R0NI. Ticker R0NI, formerly RONI.</p>
+  </div>
+  <button id="printPaper" class="no-print">Print paper wallet</button>
+  <button id="exportWallet" class="secondary no-print">Export wallet file</button>
+  <button id="exportLedger" class="secondary no-print">Export ledger file</button>
+  <label class="no-print">Import wallet file (.json)
+    <input id="importWallet" type="file" accept=".json,application/json">
+  </label>
+  <label class="no-print">Import ledger file (genesis_allocation.json)
+    <input id="importLedger" type="file" accept=".json,application/json">
+  </label>
+</section>
+
+<script>
+'use strict';
+/* R0NI Wallet app — single file, works offline.
+   Keys: WebCrypto Ed25519, private key encrypted with AES-GCM,
+   key from PBKDF2(password, 100,000 iterations, SHA-256).
+   Address (interim): "R0NI-" + first 40 hex of SHA-512(public key).
+   The canonical address in roni_wallet.py is EvoHash-11(public key);
+   WebCrypto has no SHA3 / BLAKE2, so unifying the two is still open
+   work — do not mix app addresses with Python wallet addresses.
+   Ledger: localStorage, same format as genesis_allocation.json.
+   QR: small built-in byte-mode QR encoder (ECC M, versions 1-6, mask 0). */
+const $ = (id) => document.getElementById(id);
+const enc = new TextEncoder();
+const GENESIS_SUPPLY = 100000;
+const GENESIS_HASH = '0000adbc0f16c14cc2540a4a259339fd0b02a1503bad43f0bbb484eb5007c36d68f9d825875297db1b26be6eb2a0532496c6a31317f6ce9a9fc7cf6a8591c1b0';
+const LS_WALLET = 'r0niWalletApp';
+const LS_LEDGER = 'r0niLedgerApp';
+
+function bufToHex(buf) { return [...new Uint8Array(buf)].map((b) => b.toString(16).padStart(2, '0')).join(''); }
+function bufToB64(buf) { return btoa(String.fromCharCode(...new Uint8Array(buf))); }
+function b64ToBuf(b64) { return Uint8Array.from(atob(b64), (c) => c.charCodeAt(0)).buffer; }
+function setStatus(m) { $('status').textContent = m; }
+function loadJSON(key) { try { return JSON.parse(localStorage.getItem(key)); } catch { return null; } }
+function saveJSON(key, v) { localStorage.setItem(key, JSON.stringify(v)); }
+
+function newLedger() {
+  return { chain: "Mac 'N Cheese Chain", ticker: 'R0NI', genesis_block_hash: GENESIS_HASH,
+    genesis_supply: GENESIS_SUPPLY, allocations: [], transfers: [],
+    warning: 'Prototype local ledger only — not a live chain. Do not use for real funds.' };
+}
+function getLedger() { return loadJSON(LS_LEDGER) || newLedger(); }
+function ledgerBalance(ledger, address) {
+  let b = 0;
+  for (const a of ledger.allocations || []) if (a.address === address) b += Number(a.amount) || 0;
+  for (const t of ledger.transfers || []) {
+    if (t.to === address) b += Number(t.amount) || 0;
+    if (t.from === address) b -= Number(t.amount) || 0;
+  }
+  return b;
+}
+async function deriveKey(password, salt) {
+  const base = await crypto.subtle.importKey('raw', enc.encode(password), 'PBKDF2', false, ['deriveKey']);
+  return crypto.subtle.deriveKey({ name: 'PBKDF2', salt, iterations: 100000, hash: 'SHA-256' },
+    base, { name: 'AES-GCM', length: 256 }, false, ['encrypt', 'decrypt']);
+}
+async function interimAddress(pubRaw) {
+  const d = await crypto.subtle.digest('SHA-512', pubRaw);
+  return 'R0NI-' + bufToHex(d).slice(0, 40);
+}
+let unlockedKey = null, currentPubHex = null, currentAddress = null;
+
+function refreshUI() {
+  const w = loadJSON(LS_WALLET);
+  const ledger = getLedger();
+  if (!w) {
+    $('address').textContent = 'No wallet yet';
+    $('receiveAddress').textContent = 'No wallet yet';
+    $('balance').textContent = '—';
+    $('paperAddress').textContent = '—'; $('paperPub').textContent = '—'; $('paperEnc').textContent = '—';
+    renderTxTable(ledger, null);
+    return;
+  }
+  currentAddress = w.address; currentPubHex = w.publicKeyHex;
+  $('address').textContent = w.address;
+  $('receiveAddress').textContent = w.address;
+  $('balance').textContent = ledgerBalance(ledger, w.address).toLocaleString('en-US') + ' R0NI';
+  $('paperAddress').textContent = w.address;
+  $('paperPub').textContent = w.publicKeyHex;
+  $('paperEnc').textContent = w.encryptedPrivateKeyB64;
+  drawQr($('receiveQr'), w.address);
+  drawQr($('paperQrAddress'), w.address);
+  drawQr($('paperQrPub'), w.publicKeyHex);
+  renderTxTable(ledger, w.address);
+}
+function renderTxTable(ledger, address) {
+  const t = $('txTable');
+  t.innerHTML = '<tr><th>From</th><th>To</th><th>Amount</th></tr>';
+  for (const tx of (ledger.transfers || []).slice().reverse()) {
+    const tr = document.createElement('tr');
+    const short = (a) => a ? a.slice(0, 12) + '…' : '—';
+    tr.innerHTML = '<td>' + short(tx.from) + '</td><td>' + short(tx.to) + '</td><td>' + Number(tx.amount).toLocaleString('en-US') + ' R0NI</td>';
+    t.appendChild(tr);
+  }
+  if (!(ledger.transfers || []).length) {
+    const tr = document.createElement('tr');
+    tr.innerHTML = '<td colspan="3">No transfers yet.</td>';
+    t.appendChild(tr);
+  }
+}
+async function createWallet() {
+  const password = $('password').value;
+  if (!password || password.length < 8) { setStatus('Choose a password of at least 8 characters first.'); return; }
+  if (loadJSON(LS_WALLET)) { setStatus('A wallet already exists in this browser — delete it first to create a new one.'); return; }
+  const kp = await crypto.subtle.generateKey({ name: 'Ed25519' }, true, ['sign', 'verify']);
+  const pubRaw = await crypto.subtle.exportKey('raw', kp.publicKey);
+  const privRaw = await crypto.subtle.exportKey('pkcs8', kp.privateKey);
+  const salt = crypto.getRandomValues(new Uint8Array(16));
+  const iv = crypto.getRandomValues(new Uint8Array(12));
+  const aesKey = await deriveKey(password, salt);
+  const encrypted = await crypto.subtle.encrypt({ name: 'AES-GCM', iv }, aesKey, privRaw);
+  const address = await interimAddress(pubRaw);
+  saveJSON(LS_WALLET, { address, publicKeyHex: bufToHex(pubRaw), saltB64: bufToB64(salt),
+    ivB64: bufToB64(iv), encryptedPrivateKeyB64: bufToB64(encrypted), ticker: 'R0NI',
+    chain: "Mac 'N Cheese Chain" });
+  // Genesis: the first wallet created is the genesis holder.
+  const ledger = getLedger();
+  if (!ledger.allocations.length) {
+    ledger.allocations.push({ address, amount: GENESIS_SUPPLY, source: 'genesis', genesis_block_hash: GENESIS_HASH });
+    saveJSON(LS_LEDGER, ledger);
+    setStatus('Wallet created. This is the first wallet, so the 100,000 R0NI genesis supply was allocated to it.');
+  } else {
+    setStatus('Wallet created and encrypted in this browser.');
+  }
+  refreshUI();
+}
+async function unlockWallet() {
+  const password = $('password').value;
+  const w = loadJSON(LS_WALLET);
+  if (!w) { setStatus('No wallet in this browser yet — create one first.'); return; }
+  try {
+    const aesKey = await deriveKey(password, b64ToBuf(w.saltB64));
+    const privRaw = await crypto.subtle.decrypt({ name: 'AES-GCM', iv: new Uint8Array(b64ToBuf(w.ivB64)) },
+      aesKey, b64ToBuf(w.encryptedPrivateKeyB64));
+    unlockedKey = await crypto.subtle.importKey('pkcs8', privRaw, { name: 'Ed25519' }, false, ['sign']);
+    currentPubHex = w.publicKeyHex; currentAddress = w.address;
+    refreshUI();
+    setStatus('Unlocked. You can send now. Lock when done.');
+  } catch { setStatus('Unlock failed — wrong password, or the stored wallet is corrupt.'); }
+}
+async function sendR0NI() {
+  if (!unlockedKey) { setStatus('Unlock the wallet first.'); return; }
+  const to = $('toAddress').value.trim();
+  const amount = Number($('amount').value);
+  if (!/^R0NI-[0-9a-f]{40}$/.test(to)) { setStatus('Enter a valid R0NI- address (R0NI- plus 40 hex characters).'); return; }
+  if (!Number.isInteger(amount) || amount <= 0) { setStatus('Enter a whole number of R0NI greater than 0.'); return; }
+  if (to === currentAddress) { setStatus('Cannot send to your own address.'); return; }
+  const ledger = getLedger();
+  if (ledgerBalance(ledger, currentAddress) < amount) {
+    setStatus('Insufficient balance: ' + ledgerBalance(ledger, currentAddress).toLocaleString('en-US') + ' R0NI available.');
+    return;
+  }
+  const message = 'R0NI transfer ' + currentAddress + ' -> ' + to + ' : ' + amount;
+  const sig = await crypto.subtle.sign({ name: 'Ed25519' }, unlockedKey, enc.encode(message));
+  const sigHex = bufToHex(sig);
+  // Verify the signature with the stored public key before recording.
+  const pubRaw = Uint8Array.from(currentPubHex.match(/../g), (h) => parseInt(h, 16));
+  const pubKey = await crypto.subtle.importKey('raw', pubRaw, { name: 'Ed25519' }, false, ['verify']);
+  const ok = await crypto.subtle.verify({ name: 'Ed25519' }, pubKey, sig, enc.encode(message));
+  if (!ok) { setStatus('Signature did not verify — transfer NOT recorded.'); return; }
+  ledger.transfers.push({ from: currentAddress, to, amount, message, signature_hex: sigHex, public_key_hex: currentPubHex });
+  saveJSON(LS_LEDGER, ledger);
+  refreshUI();
+  setStatus('Sent ' + amount.toLocaleString('en-US') + ' R0NI to ' + to + ' (signed and recorded in the local ledger).');
+}
+function download(name, text) {
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(new Blob([text], { type: 'application/json' }));
+  a.download = name; a.click(); setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+}
+function importFile(file, key, label) {
+  file.text().then((text) => {
+    const data = JSON.parse(text);
+    saveJSON(key, data); refreshUI();
+    setStatus(label + ' imported.');
+  }).catch(() => setStatus('Could not read that file — it must be a valid .json file.'));
+}
+
+/* ---- Minimal QR encoder: byte mode, ECC M, versions 1–6, mask 0 ---- */
+const QR_TOTAL = [26, 44, 70, 100, 134, 172];
+const QR_ECC = [10, 16, 26, 18, 24, 16];
+const QR_BLOCKS = [1, 1, 1, 2, 2, 4];
+const QR_ALIGN = [[], [6, 18], [6, 22], [6, 26], [6, 30], [6, 34]];
+const GF_EXP = new Uint8Array(512), GF_LOG = new Uint8Array(256);
+(function () { let x = 1; for (let i = 0; i < 255; i++) { GF_EXP[i] = x; GF_LOG[x] = i; x <<= 1; if (x & 0x100) x ^= 0x11D; } for (let i = 255; i < 512; i++) GF_EXP[i] = GF_EXP[i - 255]; })();
+function gfMul(a, b) { return (a === 0 || b === 0) ? 0 : GF_EXP[GF_LOG[a] + GF_LOG[b]]; }
+function rsGenerator(degree) {
+  let poly = [1];
+  for (let i = 0; i < degree; i++) {
+    // Multiply by (x + alpha^i): the x term shifts coefficients down one
+    // place, the alpha^i term stays in place.
+    const next = new Array(poly.length + 1).fill(0);
+    for (let j = 0; j < poly.length; j++) { next[j] ^= poly[j]; next[j + 1] ^= gfMul(poly[j], GF_EXP[i]); }
+    poly = next;
+  }
+  return poly;
+}
+function rsRemainder(data, degree) {
+  const gen = rsGenerator(degree); // [1, g1, ..., g_degree]
+  const res = new Array(degree).fill(0);
+  for (const b of data) {
+    const factor = b ^ res.shift();
+    res.push(0);
+    for (let i = 0; i < degree; i++) res[i] ^= gfMul(gen[i + 1], factor);
+  }
+  return res;
+}
+function qrFormatBits(mask) { // ECC level M = 00
+  let data = (0 << 3) | mask;
+  let rem = data;
+  for (let i = 0; i < 10; i++) rem = (rem << 1) ^ ((rem >> 9) * 0x537);
+  return ((data << 10) | rem) ^ 0x5412;
+}
+function qrMatrix(text) {
+  const bytes = [...enc.encode(text)];
+  let version = 0;
+  for (let v = 1; v <= 6; v++) {
+    const dataCw = QR_TOTAL[v - 1] - QR_ECC[v - 1] * QR_BLOCKS[v - 1];
+    if (Math.floor((dataCw * 8 - 12) / 8) >= bytes.length) { version = v; break; }
+  }
+  if (!version) throw new Error('Text too long for this QR encoder (max ~106 bytes).');
+  const dataCw = QR_TOTAL[version - 1] - QR_ECC[version - 1] * QR_BLOCKS[version - 1];
+  const eccLen = QR_ECC[version - 1], nBlocks = QR_BLOCKS[version - 1];
+  const bits = [];
+  const pushBits = (val, len) => { for (let i = len - 1; i >= 0; i--) bits.push((val >> i) & 1); };
+  pushBits(0b0100, 4); pushBits(bytes.length, 8);
+  for (const b of bytes) pushBits(b, 8);
+  const cap = dataCw * 8;
+  pushBits(0, Math.min(4, cap - bits.length));
+  while (bits.length % 8) bits.push(0);
+  const data = [];
+  for (let i = 0; i < bits.length; i += 8) {
+    let b = 0; for (let j = 0; j < 8; j++) b = (b << 1) | bits[i + j];
+    data.push(b);
+  }
+  for (let i = data.length; i < dataCw; i++) data.push(i % 2 ? 0x11 : 0xEC);
+  // Split into blocks, compute ECC, interleave.
+  const perBlock = dataCw / nBlocks;
+  const blocks = [], eccBlocks = [];
+  for (let i = 0; i < nBlocks; i++) {
+    const block = data.slice(i * perBlock, (i + 1) * perBlock);
+    blocks.push(block); eccBlocks.push(rsRemainder(block, eccLen));
+  }
+  const codewords = [];
+  for (let i = 0; i < perBlock; i++) for (let b = 0; b < nBlocks; b++) codewords.push(blocks[b][i]);
+  for (let i = 0; i < eccLen; i++) for (let b = 0; b < nBlocks; b++) codewords.push(eccBlocks[b][i]);
+  // Matrix
+  const size = 17 + 4 * version;
+  const m = Array.from({ length: size }, () => new Array(size).fill(null));
+  const isFunc = Array.from({ length: size }, () => new Array(size).fill(false));
+  const set = (r, c, v, f) => { if (r >= 0 && r < size && c >= 0 && c < size) { m[r][c] = v; if (f) isFunc[r][c] = true; } };
+  const finder = (r0, c0) => {
+    for (let r = -1; r <= 7; r++) for (let c = -1; c <= 7; c++) {
+      const rr = r0 + r, cc = c0 + c;
+      const on = (r >= 0 && r <= 6 && (c === 0 || c === 6)) || (c >= 0 && c <= 6 && (r === 0 || r === 6)) || (r >= 2 && r <= 4 && c >= 2 && c <= 4);
+      set(rr, cc, (r >= 0 && r <= 6 && c >= 0 && c <= 6) ? (on ? 1 : 0) : 0, true);
+    }
+  };
+  finder(0, 0); finder(0, size - 7); finder(size - 7, 0);
+  for (let i = 8; i < size - 8; i++) { set(6, i, i % 2 === 0 ? 1 : 0, true); set(i, 6, i % 2 === 0 ? 1 : 0, true); }
+  for (const a of QR_ALIGN[version - 1]) for (const b of QR_ALIGN[version - 1]) {
+    if ((a === 6 && b === 6) || (a === 6 && b === size - 7) || (a === size - 7 && b === 6)) continue;
+    for (let r = -2; r <= 2; r++) for (let c = -2; c <= 2; c++)
+      set(a + r, b + c, (Math.max(Math.abs(r), Math.abs(c)) === 1) ? 0 : 1, true);
+  }
+  set(4 * version + 9, 8, 1, true); // dark module
+  const fmt = qrFormatBits(0);
+  for (let i = 0; i <= 5; i++) set(i, 8, (fmt >> i) & 1, true);
+  set(7, 8, (fmt >> 6) & 1, true); set(8, 8, (fmt >> 7) & 1, true); set(8, 7, (fmt >> 8) & 1, true);
+  for (let i = 9; i <= 14; i++) set(8, 14 - i, (fmt >> i) & 1, true);
+  for (let i = 0; i < 8; i++) set(8, size - 1 - i, (fmt >> i) & 1, true);
+  for (let i = 8; i < 15; i++) set(size - 7 + (i - 8), 8, (fmt >> i) & 1, true);
+  // Data bits, zig-zag, mask 0: flip when (r + c) % 2 == 0
+  let bitIdx = 0;
+  const totalBits = codewords.length * 8;
+  for (let right = size - 1; right >= 1; right -= 2) {
+    if (right === 6) right = 5;
+    for (let vert = 0; vert < size; vert++) {
+      for (let j = 0; j < 2; j++) {
+        const c = right - j;
+        const upward = ((right + 1) & 2) === 0;
+        const r = upward ? size - 1 - vert : vert;
+        if (m[r][c] !== null) continue;
+        let bit = 0;
+        if (bitIdx < totalBits) bit = (codewords[bitIdx >> 3] >> (7 - (bitIdx & 7))) & 1;
+        bitIdx++;
+        if ((r + c) % 2 === 0) bit ^= 1;
+        set(r, c, bit, false);
+      }
+    }
+  }
+  return { size, modules: m };
+}
+function drawQr(canvas, text) {
+  if (!canvas || !text) return;
+  const ctx = canvas.getContext('2d');
+  ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, canvas.width, canvas.height);
+  let q;
+  try { q = qrMatrix(text); } catch { ctx.fillStyle = '#111'; ctx.font = '12px sans-serif'; ctx.fillText('QR too long — use the text above.', 8, 20); return; }
+  const quiet = 4, scale = canvas.width / (q.size + quiet * 2);
+  ctx.fillStyle = '#000';
+  for (let r = 0; r < q.size; r++) for (let c = 0; c < q.size; c++)
+    if (q.modules[r][c]) ctx.fillRect((c + quiet) * scale, (r + quiet) * scale, scale + 0.5, scale + 0.5);
+}
+
+$('create').addEventListener('click', createWallet);
+$('unlock').addEventListener('click', unlockWallet);
+$('lock').addEventListener('click', () => { unlockedKey = null; setStatus('Locked. Private key is not in memory.'); });
+$('deleteWallet').addEventListener('click', () => {
+  if (!confirm('Delete this wallet from this browser? The ledger is kept. Make sure you exported the wallet first.')) return;
+  localStorage.removeItem(LS_WALLET); unlockedKey = null; currentAddress = null; currentPubHex = null;
+  refreshUI(); setStatus('Wallet deleted from this browser.');
+});
+$('send').addEventListener('click', sendR0NI);
+$('printPaper').addEventListener('click', () => window.print());
+$('exportWallet').addEventListener('click', () => {
+  const w = loadJSON(LS_WALLET);
+  if (!w) { setStatus('No wallet to export yet.'); return; }
+  download('r0ni-wallet.json', JSON.stringify(w, null, 2));
+});
+$('exportLedger').addEventListener('click', () => download('genesis_allocation.json', JSON.stringify(getLedger(), null, 2)));
+$('importWallet').addEventListener('change', (e) => { if (e.target.files[0]) importFile(e.target.files[0], LS_WALLET, 'Wallet'); });
+$('importLedger').addEventListener('change', (e) => { if (e.target.files[0]) importFile(e.target.files[0], LS_LEDGER, 'Ledger'); });
+refreshUI();
+</script>
+</body>
+</html>

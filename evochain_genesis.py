@@ -1,16 +1,19 @@
 #!/usr/bin/env python3
 """
-Mac 'N Cheese Chain — Genesis Block 0 — RONI
+Mac 'N Cheese Chain — Genesis Block 0 — R0NI
 =============================================
 Built 2026-11-19 for Mac, in the "Cryptocurrency mining capability" thread,
 using the algorithm from the separate ai.evo thread (2026-11-13).
 
 Renamed 2026-11-19 by Mac, from the provisional "EvoChain":
   chain:  Mac 'N Cheese Chain
-  ticker: RONI (native asset)
-  NOTE: RONI already exists as a tiny token on another chain
-  (see MEMORY / white paper). Mac chose to proceed with RONI
-  for this chain anyway. Do not confuse the two.
+  ticker: R0NI (native asset)
+  NOTE: RONI (with the letter O) already exists as a tiny token on
+  another chain (see MEMORY / white paper). This chain's ticker was
+  therefore changed to R0NI (0 in place of O) on 2026-11-19.
+  Do not confuse the two. The GENESIS_DATA string below still reads
+  RONI — it is the hashed historical record of Block 0 and must NOT
+  be changed, or the block hash changes.
 
 Algorithm reused, exactly as in EvoCrypt v0.2 (evocrypt_hybrid_v02.py):
   EvoKDF-11 — an 11-step X11-style chained hash:
@@ -37,16 +40,16 @@ Mobile-lightweight design (Mac's direction, 2026-11-19):
   * No wallet, transaction format, or peer network yet.
 
 Circulating supply to start (Mac, 2026-11-19):
-  * 100,000 RONI in circulation to start.
+  * 100,000 R0NI in circulation to start.
     This IS recorded in the hashed genesis data below, so
     restarting Block 0 with this supply changes the hash.
   * This is initial circulating supply, not max supply.
     Block reward / emission schedule for the rest: TBD.
 
 Max supply (PROPOSAL only, not hashed into Block 0, not final):
-  * 10,000,000,000 RONI (10 billion) — proposed 2026-11-19.
+  * 10,000,000,000 R0NI (10 billion) — proposed 2026-11-19.
     Rationale: low enough to be scarce, high enough that a
-    person can acquire thousands of RONI for a small amount,
+    person can acquire thousands of R0NI for a small amount,
     supporting broad access / utility / demand.
     Mac has not yet confirmed this number. Alternatives he
     can pick: 1 billion, 10 billion (proposal), 100 billion.
@@ -55,12 +58,12 @@ Max supply (PROPOSAL only, not hashed into Block 0, not final):
 
 Real-world backing + USD pair (roadmap, not built):
   * Mac wants value backed, where possible, by real-world
-    physical and digital assets, and a RONI/USD trade pair first.
+    physical and digital assets, and a R0NI/USD trade pair first.
   * Backing is NOT in this code. It would need custodians,
     audits, legal structure, and proof of reserves — none of
-    which exist yet. Do not claim RONI is backed today.
-  * RONI/USD first means: first exchange / liquidity pair
-    should be RONI/USD, not RONI/BTC or RONI/ETH. That also
+    which exist yet. Do not claim R0NI is backed today.
+  * R0NI/USD first means: first exchange / liquidity pair
+    should be R0NI/USD, not R0NI/BTC or R0NI/ETH. That also
     needs an exchange listing, liquidity, and compliance —
     also not built yet.
 
@@ -69,7 +72,7 @@ Block hash = EvoHash-11( "index|timestamp|previous_hash|data|nonce" )
 
 Genesis parameters:
   chain_name:      "Mac 'N Cheese Chain"
-  ticker:          "RONI"
+  ticker:          "R0NI"
   index:           0
   previous_hash:   "0" * 128  (no parent block)
   difficulty:      hash must start with "0000" (4 hex zeros, ~1 in 65,536)
@@ -138,7 +141,7 @@ def evo_hash_hex(data: bytes) -> str:
 
 # --- Block -----------------------------------------------------------------
 CHAIN_NAME = "Mac 'N Cheese Chain"
-TICKER = "RONI"
+TICKER = "R0NI"
 DIFFICULTY_PREFIX = "0000"
 GENESIS_DATA = "Mac 'N Cheese Chain genesis — RONI — circulating supply 100000 to start — created by Mac & Destiny's Child in ai.evo"
 CIRCULATING_SUPPLY_START = 100_000
@@ -182,13 +185,13 @@ def mine_genesis():
         "hash_hex_length": len(h),
         "attempts": nonce + 1,
         "mine_time_seconds": round(elapsed, 3),
-        "circulating_supply_start_RONI": CIRCULATING_SUPPLY_START,
+        "circulating_supply_start_R0NI": CIRCULATING_SUPPLY_START,
         "design": {
             "mobile_lightweight": "CPU-only EvoHash-11, 1 pass, no ASIC/GPU/memory requirement; genesis difficulty 0000 is phone-feasible in demo",
-            "circulating_supply_start_RONI": CIRCULATING_SUPPLY_START,
-            "max_supply_proposal_RONI": MAX_SUPPLY_PROPOSAL,
+            "circulating_supply_start_R0NI": CIRCULATING_SUPPLY_START,
+            "max_supply_proposal_R0NI": MAX_SUPPLY_PROPOSAL,
             "max_supply_status": "proposal only, not hashed, not final — Mac to confirm (alternatives: 1B / 10B / 100B)",
-            "first_trade_pair_proposal": "RONI/USD",
+            "first_trade_pair_proposal": "R0NI/USD",
             "backing": "roadmap only — real-world physical + digital asset backing would need custodians, audits, legal structure; NOT backed today",
             "supersedes": "Mac 'N Cheese Chain Block 0 (no supply in data), 2026-11-19 15:57:37 PST, nonce 112867, hash 000015339905af898cc80dfb8c247c0df1c9461155341de47314cf2c782d74a28249c4b93dffe494241a59c02f4460542329fe7dc162c26c86880588b201a5f3; and EvoChain Block 0, 2026-11-19 15:47:05 PST, hash 000002d7954aef129e29b68b19fa44156d104edde9a335071a8c20267e83162683aab5e9d2428200ac8061b996f529e6aa51b6f1aa1e70d4a71d89df1a9ea06b",
         },
