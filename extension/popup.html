@@ -4,23 +4,51 @@
 <meta charset="utf-8">
 <title>RONI Wallet</title>
 <style>
-body { font-family: sans-serif; width: 320px; padding: 12px; }
-h1 { font-size: 16px; }
-#address { word-break: break-all; font-family: monospace; font-size: 12px; }
-button { margin-top: 8px; }
+body { font-family: sans-serif; width: 340px; padding: 12px; }
+h1 { font-size: 16px; margin: 0 0 4px; }
+.sub { color: #555; font-size: 12px; margin: 0 0 12px; }
+label { display: block; font-size: 12px; margin-top: 10px; }
+input, textarea { width: 100%; box-sizing: border-box; margin-top: 4px; }
+button { margin-top: 8px; margin-right: 6px; }
+.mono { word-break: break-all; font-family: monospace; font-size: 12px; }
+#status { font-size: 12px; margin-top: 10px; color: #333; }
 .note { font-size: 12px; color: #555; margin-top: 12px; }
 </style>
 </head>
 <body>
-<h1>RONI Wallet — prototype</h1>
-<p>Mac 'N Cheese Chain</p>
-<p>Address: <span id="address">No wallet loaded yet</span></p>
+<h1>RONI Wallet — v0.2</h1>
+<p class="sub">Mac 'N Cheese Chain • Own extension first</p>
+
+<div id="locked">
+  <label>Wallet password
+    <input id="password" type="password" autocomplete="off" placeholder="Choose / enter a password">
+  </label>
+  <button id="create">Create wallet</button>
+  <button id="unlock">Unlock</button>
+  <button id="lock" disabled>Lock</button>
+</div>
+
+<p>Address: <span id="address" class="mono">No wallet loaded yet</span></p>
 <p>Balance: <span id="balance">— (no node connected yet)</span></p>
-<button id="create">Create test wallet (in-memory only)</button>
-<button id="connect">Connect to local node (not built yet)</button>
+
+<label>Message to sign
+  <textarea id="message" rows="2">hello RONI</textarea>
+</label>
+<button id="sign">Sign message</button>
+<button id="copyAddress">Copy address</button>
+<p>Signature: <span id="signature" class="mono">—</span></p>
+<p>Verify: <span id="verifyResult">—</span></p>
+<button id="deleteWallet">Delete wallet from this browser</button>
+
+<p id="status">Locked. Create a wallet with a password, or unlock an existing one.</p>
+
 <p class="note">Prototype only — not audited. Do not use for real funds.
-Keys in this scaffold are in-memory only and are lost when the popup closes.
-A real version must encrypt keys at rest, like roni_wallet.py does with EvoCrypt.</p>
+v0.2 stores the private key encrypted at rest in this browser with
+AES-GCM, unlocked by your password (PBKDF2, 100,000 iterations).
+Address here is an interim SHA-512 address, labelled in the code —
+the canonical EvoHash-11 address from roni_wallet.py is not yet
+implemented in the browser. Unifying the two is v0.3.
+No node, balance, or transaction sending yet.</p>
 <script src="popup.js"></script>
 </body>
 </html>
