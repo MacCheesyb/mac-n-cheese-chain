@@ -1,0 +1,1 @@
+{"action":{"default_popup":"popup.html","default_title":"RONI Wallet"},"background":{"service_worker":"background.js"},"description":"Prototype software wallet for Mac 'N Cheese Chain (RONI). Prototype only — not audited, do not use for real funds.","host_permissions":[],"manifest_version":3,"name":"RONI Wallet — Mac 'N Cheese Chain","permissions":["storage"],"version":"0.1.0"}
