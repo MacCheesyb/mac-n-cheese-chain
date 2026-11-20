@@ -9,17 +9,18 @@ No real value, not audited.
 - Nodes: 3 (full mesh), miner: node 1 only
 - Blocks: 8 (genesis + 7 mined), difficulty `0000`, EvoHash-11
 - Transactions confirmed: 52 (20 phase 1 + 30 burst + 1 restart + 1 double-spend-test tx)
-- Burst TPS: **2.93 tx/s** (30 txs, 10.23s to confirm)
-- Mean submit latency: phase 1 6.4 ms, burst 8.5 ms
-- Mean block time: 2.57s, median: 2s
+- Burst TPS: **1.88 tx/s** (30 txs, 15.97s to confirm)
+- Mean submit latency: phase 1 8.3 ms, burst 8.4 ms
+- Mean block time: 4.29s, median: 3s
 - Node restart sync: 0.30s to catch up to height 7
 - All 3 nodes agree on the same chain: True
 
 ## Balances after the run
 - Mac's address `R0NI-ebeb98a5aeea016f49e6abf1c8b1e492317a102d`: **2392 R0NI** (inbound only — nothing was ever signed from it; we do not have his private key)
-- test-A `R0NI-427251d46f133a875584fcd19b75519c7a83ebb4`: 999105 R0NI
-- test-B `R0NI-559403bef31f8454d0fc23110e684285809982e5`: 999239 R0NI
-- test-C `R0NI-c6825566a36c9d249b3923b00c5457f5686edc08`: 999264 R0NI
+- test-A `R0NI-931b8096804669cda6104916340ba2a52d73e649`: 999105 R0NI
+- test-B `R0NI-325c681f6eed11f22cb11687d076058f73120cb7`: 999239 R0NI
+- test-C `R0NI-843f10c79482df2f1d42b99dac0826a13a44b7db`: 999264 R0NI
+- disposable `R0NI-e56d2126ff80182ffd2a2f5dd7527ac9fa44dd38`: 0 R0NI
 
 ## Security tests (all must be rejected)
 - double_spend_same_nonce: REJECTED (400: {'accepted': False, 'reason': 'bad nonce: expected 18, got 17'})

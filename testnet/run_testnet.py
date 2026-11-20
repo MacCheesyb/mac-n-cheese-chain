@@ -121,18 +121,53 @@ def mine_genesis(allocations):
         nonce += 1
 
 
+DISPOSABLE_PATH = Path("/home/hatch/workspace/r0ni-testnet/disposable-wallet.json")
+
+
+def load_disposable_wallet():
+    """Load the disposable test wallet (test-only key, NOT in the repo).
+    Returns a wallet dict like make_wallet(), or None if not present."""
+    if not DISPOSABLE_PATH.exists():
+        return None
+    data = json.loads(DISPOSABLE_PATH.read_text())
+    priv = Ed25519PrivateKey.from_private_bytes(bytes.fromhex(data["private_key_hex"]))
+    return {"name": "disposable", "priv": priv, "priv_hex": data["private_key_hex"],
+            "pub_hex": data["public_key_hex"], "address": data["address"]}
+
+
 def main():
+    import argparse
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--fund-disposable", type=int, default=0,
+                    help="Amount Mac actually funded the disposable wallet with "
+                         "(one signed transfer he made in-app from genesis). "
+                         "Mirrors that funding into the testnet genesis. "
+                         "Default 0 = awaiting funding.")
+    args = ap.parse_args()
+
     RUN_DIR.mkdir(parents=True, exist_ok=True)
     for d in ["node1", "node2", "node3"]:
         import shutil
         shutil.rmtree(RUN_DIR / d, ignore_errors=True)
 
     wallets = [make_wallet(f"test-{c}") for c in "ABC"]
+    disposable = load_disposable_wallet()
+    if disposable:
+        wallets.append(disposable)
+        if args.fund_disposable > 0:
+            print(f"disposable wallet funded (mirrored): {disposable['address']} "
+                  f"with {args.fund_disposable} R0NI — funded by Mac in-app from genesis")
+        else:
+            print(f"disposable wallet awaiting funding: {disposable['address']} "
+                  f"(balance 0 in this run; Mac has not funded it yet)")
     for w in wallets:
         print(f"test wallet {w['name']}: {w['address']}")
     print(f"Mac address (inbound only): {MAC_ADDR}")
 
-    allocations = {w["address"]: TEST_FUNDS for w in wallets}
+    active_wallets = wallets[:3] + ([disposable] if disposable and args.fund_disposable > 0 else [])
+    allocations = {w["address"]: TEST_FUNDS for w in wallets[:3]}
+    if disposable and args.fund_disposable > 0:
+        allocations[disposable["address"]] = args.fund_disposable
     genesis = mine_genesis(allocations)
     genesis_path = REPO / "testnet" / "genesis.json"
     genesis_path.write_text(json.dumps(genesis, indent=2))
@@ -192,6 +227,14 @@ def main():
         print(f"phase 1: 20 txs submitted, mean submit latency {sum(latencies)/len(latencies)*1000:.1f} ms")
         assert wait_mempool_empty(8001, timeout=90), "mempool did not drain"
         h0 = http("GET", 8001, "/status")[1]["height"]
+
+        # --- Disposable wallet test (only when Mac has funded it) -----
+        if disposable and args.fund_disposable > 0:
+            for i, to in enumerate([MAC_ADDR, wallets[0]["address"], wallets[1]["address"]]):
+                tx, ok, r = send(disposable, to, 25)
+                assert ok, f"disposable tx rejected: {r}"
+            assert wait_mempool_empty(8001, timeout=60), "disposable mempool did not drain"
+            print("disposable wallet: 3 x 25 R0NI spent (to Mac + test wallets), confirmed")
 
         # --- Phase 2: TPS burst (30 txs) ------------------------------
         burst_t0 = time.time()
@@ -324,6 +367,15 @@ def main():
             "mac_address_note": "inbound only — no transaction was ever signed from Mac's address; we do not have his private key. A transaction FROM Mac's address requires Mac to sign in his own wallet app.",
             "test_wallets": [{"name": w["name"], "address": w["address"],
                               "balance": balances[w["address"]]} for w in wallets],
+            "disposable_wallet": {
+                "address": disposable["address"] if disposable else None,
+                "public_key_hex": disposable["pub_hex"] if disposable else None,
+                "funded_amount_mirrored": args.fund_disposable if disposable else 0,
+                "status": ("funded — testnet can spend from it; never the genesis key"
+                           if disposable and args.fund_disposable > 0 else
+                           "awaiting funding from Mac (one signed transfer in-app from genesis, suggested 1,000 R0NI)"),
+                "private_key_location": "~/workspace/r0ni-testnet/disposable-wallet.json (NOT in the public repo)",
+            } if disposable else {"status": "not created"},
             "transactions_submitted_phase1": 20,
             "transactions_submitted_burst": 30,
             "transactions_confirmed_total": confirmed,
