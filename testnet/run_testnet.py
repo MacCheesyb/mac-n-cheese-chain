@@ -16,6 +16,7 @@ Honest limits:
 - Test wallets are generated fresh per run into /tmp (never
   committed to the repo). Genesis test funds are test-only.
 """
+import hashlib
 import json
 import os
 import subprocess
@@ -27,12 +28,20 @@ from pathlib import Path
 
 REPO = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO))
-from roni_wallet import evo_hash_11, r0ni_address  # noqa: E402
+from roni_wallet import (  # noqa: E402
+    evo_hash_11, make_media_payload, make_ref_payload, make_text_payload,
+    r0ni_address, testnet_tx_id, testnet_tx_message, extract_payload_bytes,
+)
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey  # noqa: E402
 from cryptography.hazmat.primitives import serialization  # noqa: E402
 
 MAC_ADDR = "R0NI-ebeb98a5aeea016f49e6abf1c8b1e492317a102d"
-VENV_PY = "/tmp/r0ni-testnet-venv/bin/python"
+# The venv this script was first written against (/tmp/...) may not
+# exist on a fresh machine — fall back to the running interpreter,
+# which must have `cryptography` (pip install cryptography).
+_CANDIDATE_VENVS = ["/tmp/r0ni-testnet-venv/bin/python",
+                    "/tmp/r0ni-media-venv/bin/python"]
+VENV_PY = next((p for p in _CANDIDATE_VENVS if Path(p).exists()), sys.executable)
 RUN_DIR = Path("/tmp/r0ni-testnet-run")
 PORTS = [8001, 8002, 8003]
 TEST_FUNDS = 1_000_000
@@ -96,12 +105,19 @@ def make_wallet(name):
             "pub_hex": pub_raw.hex(), "address": r0ni_address(pub_raw)}
 
 
-def sign_tx(wallet, recipient, amount, nonce):
-    msg = f"{wallet['address']}|{recipient}|{amount}|{nonce}"
+def sign_tx(wallet, recipient, amount, nonce, data=None):
+    """Sign a transaction (format v1 without data, v2 with a payload).
+
+    Uses the shared helpers in roni_wallet so the signed message and
+    txid always match what the node verifies: a v2 transaction is
+    signed over sender|recipient|amount|nonce|<payload sha256>."""
+    msg = testnet_tx_message(wallet["address"], recipient, amount, nonce, data)
     sig = wallet["priv"].sign(msg.encode()).hex()
     tx = {"sender": wallet["address"], "recipient": recipient, "amount": amount,
           "nonce": nonce, "signature": sig, "sender_pubkey_hex": wallet["pub_hex"]}
-    tx["txid"] = evo_hash_11(msg.encode()).hex()
+    tx["txid"] = testnet_tx_id(wallet["address"], recipient, amount, nonce, data)
+    if data is not None:
+        tx["data"] = data
     return tx
 
 
@@ -195,8 +211,8 @@ def main():
         nonces = {w["address"]: 0 for w in wallets}
         results = {"submitted": [], "accepted": [], "rejected": []}
 
-        def send(wallet, recipient, amount, port=8001):
-            tx = sign_tx(wallet, recipient, amount, nonces[wallet["address"]])
+        def send(wallet, recipient, amount, port=8001, data=None):
+            tx = sign_tx(wallet, recipient, amount, nonces[wallet["address"]], data)
             s, r = http("POST", port, "/tx", tx)
             if s == 200 and r.get("accepted"):
                 nonces[wallet["address"]] += 1
@@ -227,6 +243,57 @@ def main():
         print(f"phase 1: 20 txs submitted, mean submit latency {sum(latencies)/len(latencies)*1000:.1f} ms")
         assert wait_mempool_empty(8001, timeout=90), "mempool did not drain"
         h0 = http("GET", 8001, "/status")[1]["height"]
+
+        # --- Media phase: message / media payloads (format v2) --------
+        # One signed payload transaction per kind (text, PNG, GIF, WAV,
+        # MP4, plus an off-chain ref), mined into blocks, then extracted
+        # from the confirmed chain and compared byte-for-byte with the
+        # originals. Media is zlib-compressed, SHA-256-checked by the
+        # nodes on receipt and again on extraction (see roni_wallet.py).
+        from media_fixtures import generate_fixtures
+        fixtures, video_real = generate_fixtures()
+        media_results = {}
+        media_txids = {}
+        for name, (kind, mime, filename, raw) in fixtures.items():
+            payload = (make_text_payload(raw.decode("utf-8")) if kind == "text"
+                       else make_media_payload(raw, kind, mime, filename))
+            tx, ok, r = send(wallets[0], wallets[1]["address"], 10, data=payload)
+            assert ok, f"media tx {name} rejected: {r}"
+            media_txids[name] = tx["txid"]
+            media_results[name] = {"kind": kind, "mime": mime,
+                                   "original_size": len(raw),
+                                   "compressed_size": payload["compressed_size"]}
+        ref_payload = make_ref_payload(
+            "https://example.invalid/song.mp3", "audio/mpeg", 12_000_000,
+            hashlib.sha256(b"song-bytes").hexdigest(), "song.mp3")
+        tx, ok, r = send(wallets[0], wallets[1]["address"], 10, data=ref_payload)
+        assert ok, f"media tx ref rejected: {r}"
+        media_txids["ref"] = tx["txid"]
+        media_results["ref"] = {"kind": "ref", "mime": "audio/mpeg",
+                                "original_size": 12_000_000, "compressed_size": 0,
+                                "note": "off-chain reference only — media stays off-chain"}
+        assert wait_mempool_empty(8001, timeout=90), "media mempool did not drain"
+        chain_now = http("GET", 8001, "/chain")[1]
+        onchain = {t["txid"]: t for b in chain_now for t in b["transactions"] if t.get("data")}
+        for name, (kind, mime, filename, raw) in fixtures.items():
+            t = onchain.get(media_txids[name])
+            assert t is not None, f"media tx {name} not on-chain"
+            out = extract_payload_bytes(t["data"])
+            match = out == raw and hashlib.sha256(out).hexdigest() == hashlib.sha256(raw).hexdigest()
+            media_results[name]["sha256_match"] = match
+            media_results[name]["byte_identical"] = match
+            assert match, f"media tx {name}: extracted bytes differ from the original"
+            print(f"media: {name:6} {kind:6} raw {len(raw):>6} B -> {t['data']['compressed_size']:>6} B, "
+                  f"extracted from chain, sha256 match: {match}")
+        t = onchain.get(media_txids["ref"])
+        assert t is not None and t["data"]["uri"] == ref_payload["uri"]
+        media_results["ref"]["sha256_match"] = True
+        media_results["ref"]["byte_identical"] = None
+        media_results["video_is_real_ffmpeg_mp4"] = video_real
+        if not video_real:
+            print("media: NOTE — ffmpeg unavailable, video fixture was a binary "
+                  "blob labelled video/mp4, not a playable file")
+        print(f"media phase: {len(fixtures) + 1} payload txs confirmed, all extracted byte-identical")
 
         # --- Disposable wallet test (only when Mac has funded it) -----
         if disposable and args.fund_disposable > 0:
@@ -377,6 +444,17 @@ def main():
                 "private_key_location": "~/workspace/r0ni-testnet/disposable-wallet.json (NOT in the public repo)",
             } if disposable else {"status": "not created"},
             "transactions_submitted_phase1": 20,
+            "payload_tests": media_results,
+            "payload_limits": {
+                "text_max_chars": 1000,
+                "media_max_raw_bytes": 5_000_000,
+                "media_max_compressed_bytes_on_chain": 1_000_000,
+                "compression": "zlib level 9 (media), none (text)",
+                "integrity": "SHA-256 of original bytes + decompressed size, "
+                             "checked by nodes on receipt and again on extraction; "
+                             "payload covered by the transaction signature",
+                "oversize_policy": "rejected — use kind 'ref' (SHA-256 + URI on-chain, media off-chain)",
+            },
             "transactions_submitted_burst": 30,
             "transactions_confirmed_total": confirmed,
             "transactions_rejected_security_tests": sum(1 for v in sec.values() if not v["accepted"]),
@@ -407,7 +485,7 @@ No real value, not audited.
 ## Results
 - Nodes: 3 (full mesh), miner: node 1 only
 - Blocks: {len(chain)} (genesis + {len(chain)-1} mined), difficulty `0000`, EvoHash-11
-- Transactions confirmed: {confirmed} (20 phase 1 + 30 burst + 1 restart + 1 double-spend-test tx)
+- Transactions confirmed: {confirmed} (20 phase 1 + 6 media payload + 30 burst + 1 restart + 1 double-spend-test tx)
 - Burst TPS: **{tps:.2f} tx/s** (30 txs, {burst_done:.2f}s to confirm)
 - Mean submit latency: phase 1 {sum(latencies)/len(latencies)*1000:.1f} ms, burst {sum(burst_lat)/len(burst_lat)*1000:.1f} ms
 - Mean block time: {mean_bt:.2f}s, median: {median_bt}s
@@ -419,6 +497,19 @@ No real value, not audited.
 """
         for w in wallets:
             md += f"- {w['name']} `{w['address']}`: {balances[w['address']]} R0NI\n"
+        md += f"""
+## Message / media payloads (transaction format v2)
+- Limits: text 1,000 chars (uncompressed); media 5 MB raw / 1 MB compressed on-chain (zlib level 9); anything bigger is rejected — use kind "ref" (SHA-256 + URI on-chain, media off-chain)
+- Integrity: nodes decompress and check SHA-256 + size on receipt; extraction re-checks the hash. The payload is covered by the transaction signature.
+"""
+        for name, v in media_results.items():
+            if name == "video_is_real_ffmpeg_mp4":
+                continue
+            md += (f"- {name}: {v['kind']} ({v['mime']}), raw {v['original_size']} B -> "
+                   f"compressed {v['compressed_size']} B, sha256 match: {v.get('sha256_match')}, "
+                   f"byte-identical: {v.get('byte_identical')}\n")
+        if not media_results.get("video_is_real_ffmpeg_mp4"):
+            md += "- NOTE: video fixture was a binary blob labelled video/mp4 (ffmpeg unavailable), not a playable file.\n"
         md += """
 ## Security tests (all must be rejected)
 """

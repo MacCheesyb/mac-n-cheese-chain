@@ -12,17 +12,17 @@
   "test_wallets": [
     {
       "name": "test-A",
-      "address": "R0NI-931b8096804669cda6104916340ba2a52d73e649",
-      "balance": 999105
+      "address": "R0NI-5d71191a33494939687a98f3761396c3f07da1fc",
+      "balance": 999045
     },
     {
       "name": "test-B",
-      "address": "R0NI-325c681f6eed11f22cb11687d076058f73120cb7",
-      "balance": 999239
+      "address": "R0NI-aa51d726d661bd0b8e752e0823471a55473ef606",
+      "balance": 999299
     },
     {
       "name": "test-C",
-      "address": "R0NI-843f10c79482df2f1d42b99dac0826a13a44b7db",
+      "address": "R0NI-bac33e77e90463a2e5b6d7ed3c5206254add3669",
       "balance": 999264
     },
     {
@@ -39,17 +39,77 @@
     "private_key_location": "~/workspace/r0ni-testnet/disposable-wallet.json (NOT in the public repo)"
   },
   "transactions_submitted_phase1": 20,
+  "payload_tests": {
+    "text": {
+      "kind": "text",
+      "mime": "text/plain",
+      "original_size": 157,
+      "compressed_size": 157,
+      "sha256_match": true,
+      "byte_identical": true
+    },
+    "image": {
+      "kind": "image",
+      "mime": "image/png",
+      "original_size": 92,
+      "compressed_size": 93,
+      "sha256_match": true,
+      "byte_identical": true
+    },
+    "gif": {
+      "kind": "gif",
+      "mime": "image/gif",
+      "original_size": 35,
+      "compressed_size": 36,
+      "sha256_match": true,
+      "byte_identical": true
+    },
+    "audio": {
+      "kind": "audio",
+      "mime": "audio/wav",
+      "original_size": 8044,
+      "compressed_size": 520,
+      "sha256_match": true,
+      "byte_identical": true
+    },
+    "video": {
+      "kind": "video",
+      "mime": "video/mp4",
+      "original_size": 5390,
+      "compressed_size": 4816,
+      "sha256_match": true,
+      "byte_identical": true
+    },
+    "ref": {
+      "kind": "ref",
+      "mime": "audio/mpeg",
+      "original_size": 12000000,
+      "compressed_size": 0,
+      "note": "off-chain reference only \u2014 media stays off-chain",
+      "sha256_match": true,
+      "byte_identical": null
+    },
+    "video_is_real_ffmpeg_mp4": true
+  },
+  "payload_limits": {
+    "text_max_chars": 1000,
+    "media_max_raw_bytes": 5000000,
+    "media_max_compressed_bytes_on_chain": 1000000,
+    "compression": "zlib level 9 (media), none (text)",
+    "integrity": "SHA-256 of original bytes + decompressed size, checked by nodes on receipt and again on extraction; payload covered by the transaction signature",
+    "oversize_policy": "rejected \u2014 use kind 'ref' (SHA-256 + URI on-chain, media off-chain)"
+  },
   "transactions_submitted_burst": 30,
-  "transactions_confirmed_total": 52,
+  "transactions_confirmed_total": 58,
   "transactions_rejected_security_tests": 5,
-  "mean_submit_latency_ms_phase1": 8.3,
-  "mean_submit_latency_ms_burst": 8.4,
-  "burst_tps_confirmed": 1.88,
-  "burst_submit_seconds": 0.25,
-  "burst_confirm_seconds": 15.97,
-  "blocks": 8,
-  "mean_block_time_seconds": 4.29,
-  "median_block_time_seconds": 3,
+  "mean_submit_latency_ms_phase1": 19.0,
+  "mean_submit_latency_ms_burst": 9.3,
+  "burst_tps_confirmed": 3.32,
+  "burst_submit_seconds": 0.28,
+  "burst_confirm_seconds": 9.04,
+  "blocks": 9,
+  "mean_block_time_seconds": 5.12,
+  "median_block_time_seconds": 6,
   "node_restart_sync_seconds": 0.3,
   "nodes_agree_on_chain": true,
   "security_tests": {

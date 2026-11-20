@@ -39,7 +39,9 @@ import urllib.error
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
-from roni_wallet import evo_hash_11, r0ni_address  # noqa: E402
+from roni_wallet import (  # noqa: E402
+    evo_hash_11, r0ni_address, testnet_tx_message, validate_payload,
+)
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PublicKey  # noqa: E402
 
 
@@ -52,7 +54,14 @@ def main():
     if "--port" in sys.argv:
         port = int(sys.argv[sys.argv.index("--port") + 1])
     # Local pre-check (the node re-checks everything on receipt).
-    msg = f"{tx['sender']}|{tx['recipient']}|{tx['amount']}|{tx['nonce']}"
+    # Uses the shared v1/v2 message: a payload transaction is signed
+    # over sender|recipient|amount|nonce|<payload sha256>, so a
+    # payload is verified here too, not just the amount.
+    if tx.get("data") is not None:
+        ok, reason = validate_payload(tx["data"])
+        assert ok, f"invalid payload: {reason}"
+    msg = testnet_tx_message(tx["sender"], tx["recipient"], tx["amount"],
+                             tx["nonce"], tx.get("data"))
     assert r0ni_address(bytes.fromhex(tx["sender_pubkey_hex"])) == tx["sender"], \
         "address does not match sender public key"
     assert evo_hash_11(msg.encode()).hex() == tx.get("txid", evo_hash_11(msg.encode()).hex()), \

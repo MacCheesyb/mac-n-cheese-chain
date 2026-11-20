@@ -62,4 +62,81 @@ testnet then uses *that* disposable test wallet's keypair
 ```
 
 Requires a venv with `cryptography` (the script uses
-`/tmp/r0ni-testnet-venv`). Node 1 mines; nodes 2–3 sync.
+`/tmp/r0ni-testnet-venv` if it exists, else `/tmp/r0ni-media-venv`,
+else the running interpreter). Node 1 mines; nodes 2–3 sync.
+
+## Message / media payloads — transaction format v2
+
+A transaction may carry an optional `"data"` payload, so a
+transaction can include a message or media — a picture, song,
+short video, GIF, or other digital file. This is what gives the
+chain real utility beyond moving numbers around.
+
+**Format** (see `roni_wallet.py` for the full spec and the reasons):
+
+```json
+{"kind": "text", "mime": "text/plain", "filename": "message.txt",
+ "original_size": 157, "compressed_size": 157,
+ "sha256_of_original": "<64 hex of the ORIGINAL bytes>",
+ "compression": "none", "data_b64": "<base64 of the bytes>"}
+```
+
+Kinds: `text`, `image`, `audio`, `video`, `gif`, `other`, `ref`.
+`ref` is an off-chain reference — only the SHA-256 and a URI go
+on-chain (see below).
+
+**Limits — why they exist:** a chain that stored every song and
+video inline would bloat beyond what phones can sync, so storage
+is bounded on purpose.
+
+| Payload | Limit |
+|---|---|
+| Text message | 1,000 characters, stored uncompressed |
+| Media (image / audio / video / gif / other) | 5 MB raw, compressed with zlib level 9, max 1 MB compressed on-chain |
+| Off-chain reference (`ref`) | No size limit on the media (it is not stored on-chain) |
+
+Anything over the inline limits is **rejected** with an error
+telling the user to use a `ref` payload instead.
+
+**Lossless delivery — how it is guaranteed:** the node
+decompresses the payload and checks BOTH the SHA-256 of the
+original bytes AND the decompressed size before accepting it,
+and extraction re-checks the hash of the written file. What
+comes out is byte-identical to what went in, or it is rejected
+— never silently corrupted. The payload is also covered by the
+transaction signature (a v2 transaction is signed over
+`sender|recipient|amount|nonce|<sha256 of the canonical payload
+JSON>`), so tampering with the payload breaks the signature and
+the txid. Decompression is capped at the 5 MB raw limit, so a
+small compressed bomb cannot expand into gigabytes of memory.
+A MIME allowlist per kind rejects e.g. an "image" carrying
+`text/plain`.
+
+**Off-chain reference (`ref`):** for media over the inline
+limits, or media you do not want replicated to every node.
+Store only the SHA-256 + a URI (`http://`, `https://`,
+`ipfs://`, `magnet:`) on-chain. The media itself is NOT
+stored or delivered by the chain — whoever fetches it must
+hash-check it against `sha256_of_original` before trusting it.
+
+**Attach / extract (CLI):**
+
+```bash
+python3 roni_wallet.py payload-text "hello, chain"          # -> payload JSON
+python3 roni_wallet.py payload-file photo.png                # kind/mime inferred
+python3 roni_wallet.py payload-file song.mp3 --kind audio --mime audio/mpeg
+python3 roni_wallet.py payload-ref https://example.com/song.mp3 audio/mpeg 12000000 <sha256-hex>
+python3 roni_wallet.py validate-payload payload.json        # ok / reason
+python3 roni_wallet.py make-tx wallet.json <password> <to> <amount> <nonce> payload.json
+python3 roni_wallet.py extract tx.json out.png               # verifies SHA-256, writes original bytes
+```
+
+**Tests:** `testnet/test_payloads.py` (offline roundtrips +
+rejections, plus a live single-node roundtrip) and the media
+phase of `testnet/run_testnet.py` (results in
+`testnet/payload_test_results.json` and `testnet/ANALYTICS.md`).
+Roundtrips tested: text, PNG, GIF, WAV, and a real 1-second
+ffmpeg MP4 — all extracted byte-identical, SHA-256 matching.
+Rejections tested, all refused: oversize raw, oversize
+compressed, corrupted compressed data, SHA-256 mismatch,
+bad MIME, over-long text.

@@ -7,20 +7,30 @@ No real value, not audited.
 
 ## Results
 - Nodes: 3 (full mesh), miner: node 1 only
-- Blocks: 8 (genesis + 7 mined), difficulty `0000`, EvoHash-11
-- Transactions confirmed: 52 (20 phase 1 + 30 burst + 1 restart + 1 double-spend-test tx)
-- Burst TPS: **1.88 tx/s** (30 txs, 15.97s to confirm)
-- Mean submit latency: phase 1 8.3 ms, burst 8.4 ms
-- Mean block time: 4.29s, median: 3s
-- Node restart sync: 0.30s to catch up to height 7
+- Blocks: 9 (genesis + 8 mined), difficulty `0000`, EvoHash-11
+- Transactions confirmed: 58 (20 phase 1 + 6 media payload + 30 burst + 1 restart + 1 double-spend-test tx)
+- Burst TPS: **3.32 tx/s** (30 txs, 9.04s to confirm)
+- Mean submit latency: phase 1 19.0 ms, burst 9.3 ms
+- Mean block time: 5.12s, median: 6s
+- Node restart sync: 0.30s to catch up to height 8
 - All 3 nodes agree on the same chain: True
 
 ## Balances after the run
 - Mac's address `R0NI-ebeb98a5aeea016f49e6abf1c8b1e492317a102d`: **2392 R0NI** (inbound only — nothing was ever signed from it; we do not have his private key)
-- test-A `R0NI-931b8096804669cda6104916340ba2a52d73e649`: 999105 R0NI
-- test-B `R0NI-325c681f6eed11f22cb11687d076058f73120cb7`: 999239 R0NI
-- test-C `R0NI-843f10c79482df2f1d42b99dac0826a13a44b7db`: 999264 R0NI
+- test-A `R0NI-5d71191a33494939687a98f3761396c3f07da1fc`: 999045 R0NI
+- test-B `R0NI-aa51d726d661bd0b8e752e0823471a55473ef606`: 999299 R0NI
+- test-C `R0NI-bac33e77e90463a2e5b6d7ed3c5206254add3669`: 999264 R0NI
 - disposable `R0NI-e56d2126ff80182ffd2a2f5dd7527ac9fa44dd38`: 0 R0NI
+
+## Message / media payloads (transaction format v2)
+- Limits: text 1,000 chars (uncompressed); media 5 MB raw / 1 MB compressed on-chain (zlib level 9); anything bigger is rejected — use kind "ref" (SHA-256 + URI on-chain, media off-chain)
+- Integrity: nodes decompress and check SHA-256 + size on receipt; extraction re-checks the hash. The payload is covered by the transaction signature.
+- text: text (text/plain), raw 157 B -> compressed 157 B, sha256 match: True, byte-identical: True
+- image: image (image/png), raw 92 B -> compressed 93 B, sha256 match: True, byte-identical: True
+- gif: gif (image/gif), raw 35 B -> compressed 36 B, sha256 match: True, byte-identical: True
+- audio: audio (audio/wav), raw 8044 B -> compressed 520 B, sha256 match: True, byte-identical: True
+- video: video (video/mp4), raw 5390 B -> compressed 4816 B, sha256 match: True, byte-identical: True
+- ref: ref (audio/mpeg), raw 12000000 B -> compressed 0 B, sha256 match: True, byte-identical: None
 
 ## Security tests (all must be rejected)
 - double_spend_same_nonce: REJECTED (400: {'accepted': False, 'reason': 'bad nonce: expected 18, got 17'})

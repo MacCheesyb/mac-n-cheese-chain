@@ -19,6 +19,10 @@ What it does:
     The wallet file itself only holds the public key, address,
     and the EvoCrypt-encrypted private key — never plaintext.
   * Sign a message, verify a signature.
+  * Message / media payloads (transaction format v2, see
+    "Payloads" below): attach a text message or a picture, song,
+    short video, GIF, or other file to a signed transaction, and
+    extract it back byte-identically, with SHA-256 verification.
   * Local ledger (genesis_allocation.json): show a balance and
     record a signed local transfer. There is no network / node yet,
     so the ledger is a local file — a demo of the accounting, not
@@ -26,6 +30,41 @@ What it does:
     wallet Mac creates in the wallet app (wallet-app.html) is
     allocated the 100,000 R0NI genesis supply. No address is
     invented or pre-filled here.
+
+Payloads (transaction format v2 — backward compatible):
+  A transaction may carry an optional "data" field:
+    {"kind": "text"|"image"|"audio"|"video"|"gif"|"other"|"ref",
+     "mime": "image/png", "filename": "photo.png",
+     "original_size": 12345, "compressed_size": 6789,
+     "sha256_of_original": "<64 hex of the ORIGINAL bytes>",
+     "compression": "zlib" | "none", "data_b64": "<base64>",
+     "uri": "<only for kind 'ref'>"}
+  Transactions without "data" are format v1 and still validate.
+  Why it is designed this way:
+  - Lossless delivery: the payload is stored compressed (zlib
+    level 9) and the node decompresses it and checks BOTH the
+    SHA-256 of the original bytes AND the decompressed size
+    before accepting it. Extraction re-checks the hash, so what
+    comes out is byte-identical to what went in, or it is
+    rejected — never silently corrupted.
+  - Storage is bounded: raw media max 5 MB, compressed on-chain
+    max 1 MB. A chain that stores every song and video inline
+    would bloat beyond what phones can sync, so anything bigger
+    is REJECTED with a message telling the user to use kind
+    "ref" instead: store only the SHA-256 + a URI on-chain and
+    keep the media itself off-chain, then hash-check it after
+    fetching it. Text is capped at 1,000 characters and stored
+    uncompressed (compression "none") so it stays readable.
+  - The payload is covered by the signature: a v2 transaction
+    is signed over sender|recipient|amount|nonce|<sha256 of the
+    canonical payload JSON>, so tampering with the payload
+    breaks the signature AND the txid. A v1 transaction is
+    signed over sender|recipient|amount|nonce, as before.
+  - Decompression is capped: a node aborts decompression if the
+    output would exceed the 5 MB raw limit, so a small
+    compressed bomb cannot expand into gigabytes of memory.
+  - MIME allowlist per kind (see PAYLOAD_MIMES): a payload that
+    claims to be an image but carries text/plain is rejected.
 
 What it does NOT do yet:
   * No network / node, no RPC, no block building.
@@ -54,6 +93,13 @@ Run:
   python3 roni_wallet.py allocate-genesis <ledger.json> <wallet.json>
   python3 roni_wallet.py balance <ledger.json> <address>
   python3 roni_wallet.py transfer <ledger.json> <wallet.json> <password> <to-address> <amount>
+  # Payloads (format v2 — text / media / off-chain ref):
+  python3 roni_wallet.py payload-text "hello, chain"
+  python3 roni_wallet.py payload-file photo.png [--kind image] [--mime image/png]
+  python3 roni_wallet.py payload-ref https://example.com/song.mp3 audio/mpeg 12000000 <sha256-hex> [--filename song.mp3]
+  python3 roni_wallet.py validate-payload payload.json
+  python3 roni_wallet.py make-tx <wallet.json> <password> <to> <amount> <nonce> [payload.json]
+  python3 roni_wallet.py extract <tx.json> <output-path>   # verifies SHA-256, writes original bytes
 
 MetaMask note:
   MetaMask speaks EVM (Ethereum-style secp256k1 addresses,
@@ -183,6 +229,336 @@ def verify_signature(public_key_hex: str, message: str, signature_hex: str) -> b
         return True
     except Exception:
         return False
+
+
+# ---------------------------------------------------------------------------
+# Message / media payloads — transaction format v2.
+#
+# Design (see docstring): optional "data" on a transaction, zlib
+# level 9 for media, bounded storage, SHA-256 + size checked on
+# receipt and again on extraction, payload covered by the signature.
+# ---------------------------------------------------------------------------
+import zlib  # noqa: E402
+
+MAX_TEXT_CHARS = 1000
+MAX_MEDIA_RAW_BYTES = 5_000_000          # 5 MB raw, per payload
+MAX_COMPRESSED_BYTES = 1_000_000         # 1 MB compressed, on-chain
+PAYLOAD_KINDS = ("text", "image", "audio", "video", "gif", "other", "ref")
+PAYLOAD_MIMES = {
+    "text": {"text/plain"},
+    "image": {"image/png", "image/jpeg", "image/webp"},
+    "gif": {"image/gif"},
+    "audio": {"audio/wav", "audio/x-wav", "audio/mpeg", "audio/ogg",
+              "audio/mp4", "audio/webm"},
+    "video": {"video/mp4", "video/webm", "video/quicktime"},
+    "other": {"application/octet-stream"},
+    # "ref": any mime of the referenced media (must contain "/").
+}
+# Kinds whose bytes are stored inline, compressed with zlib.
+MEDIA_KINDS = ("image", "audio", "video", "gif", "other")
+
+
+def _is_hex64(s) -> bool:
+    return (isinstance(s, str) and len(s) == 64
+            and all(c in "0123456789abcdef" for c in s))
+
+
+def _clean_filename(filename):
+    if filename is None:
+        return None
+    if not isinstance(filename, str) or not filename or len(filename) > 255:
+        raise ValueError("filename must be a non-empty string of at most 255 characters")
+    if "/" in filename or "\\" in filename or ".." in filename:
+        raise ValueError("filename must not contain a path — give a plain file name")
+    return filename
+
+
+def payload_sha256_hex(data: dict) -> str:
+    """SHA-256 of the canonical JSON of a payload (sorted keys, no spaces).
+
+    This is what a v2 transaction signs over, so any change to the
+    payload — bytes, hash claim, size claim, mime — breaks the
+    signature and the txid."""
+    canonical = json.dumps(data, sort_keys=True, separators=(",", ":")).encode("utf-8")
+    return hashlib.sha256(canonical).hexdigest()
+
+
+def make_text_payload(message: str) -> dict:
+    """A text message payload, stored uncompressed. Max 1,000 characters."""
+    if not isinstance(message, str):
+        raise ValueError("message must be a string")
+    if len(message) > MAX_TEXT_CHARS:
+        raise ValueError(
+            f"text payload is {len(message)} characters — max is "
+            f"{MAX_TEXT_CHARS}. Split it across transactions, or use a "
+            "media/ref payload for longer content.")
+    raw = message.encode("utf-8")
+    return {
+        "kind": "text",
+        "mime": "text/plain",
+        "filename": "message.txt",
+        "original_size": len(raw),
+        "compressed_size": len(raw),
+        "sha256_of_original": hashlib.sha256(raw).hexdigest(),
+        "compression": "none",
+        "data_b64": base64.b64encode(raw).decode("ascii"),
+    }
+
+
+def make_media_payload(raw: bytes, kind: str, mime: str, filename=None) -> dict:
+    """A media payload: raw bytes -> zlib level 9, with SHA-256 of the original.
+
+    Rejects raw input over 5 MB, and rejects anything that still
+    compresses to over 1 MB — in both cases the error tells the
+    caller to use make_ref_payload() instead (hash + URI on-chain,
+    media itself off-chain)."""
+    if kind not in MEDIA_KINDS:
+        raise ValueError(f"kind must be one of {MEDIA_KINDS}, got {kind!r}")
+    if mime not in PAYLOAD_MIMES[kind]:
+        raise ValueError(f"mime {mime!r} is not allowed for kind {kind!r} "
+                         f"(allowed: {sorted(PAYLOAD_MIMES[kind])})")
+    if not isinstance(raw, (bytes, bytearray)):
+        raise ValueError("raw media must be bytes")
+    raw = bytes(raw)
+    if len(raw) > MAX_MEDIA_RAW_BYTES:
+        raise ValueError(
+            f"media is {len(raw)} bytes raw — max is {MAX_MEDIA_RAW_BYTES} "
+            "bytes (5 MB). Store the media off-chain and use a 'ref' "
+            "payload instead: make_ref_payload(uri, mime, size, sha256).")
+    compressed = zlib.compress(raw, 9)
+    if len(compressed) > MAX_COMPRESSED_BYTES:
+        raise ValueError(
+            f"media compresses to {len(compressed)} bytes — max on-chain "
+            f"is {MAX_COMPRESSED_BYTES} bytes (1 MB). It does not compress "
+            "well enough to store inline. Store the media off-chain and "
+            "use a 'ref' payload instead: make_ref_payload(uri, mime, "
+            "size, sha256).")
+    return {
+        "kind": kind,
+        "mime": mime,
+        "filename": _clean_filename(filename),
+        "original_size": len(raw),
+        "compressed_size": len(compressed),
+        "sha256_of_original": hashlib.sha256(raw).hexdigest(),
+        "compression": "zlib",
+        "data_b64": base64.b64encode(compressed).decode("ascii"),
+    }
+
+
+def make_ref_payload(uri: str, mime: str, original_size: int,
+                     sha256_hex: str, filename=None) -> dict:
+    """An off-chain reference payload: only the SHA-256 + URI go on-chain.
+
+    Use this for media over the inline limits, or for media you do not
+    want replicated to every node. The media itself is NOT stored or
+    delivered by the chain — whoever fetches it from the URI must
+    hash-check it against sha256_of_original before trusting it."""
+    if not isinstance(uri, str) or not uri:
+        raise ValueError("uri must be a non-empty string")
+    if not uri.startswith(("http://", "https://", "ipfs://", "magnet:")):
+        raise ValueError("uri must start with http://, https://, ipfs:// or magnet:")
+    if not isinstance(mime, str) or "/" not in mime or any(c.isspace() for c in mime):
+        raise ValueError(f"mime {mime!r} is not a valid media type")
+    if not isinstance(original_size, int) or original_size <= 0:
+        raise ValueError("original_size must be a positive whole number of bytes")
+    if not _is_hex64(sha256_hex):
+        raise ValueError("sha256_of_original must be 64 lowercase hex characters")
+    return {
+        "kind": "ref",
+        "mime": mime,
+        "filename": _clean_filename(filename),
+        "original_size": original_size,
+        "compressed_size": 0,
+        "sha256_of_original": sha256_hex,
+        "compression": "none",
+        "data_b64": "",
+        "uri": uri,
+    }
+
+
+def validate_payload(data) -> tuple:
+    """Validate a payload dict. Returns (True, "ok") or (False, reason).
+
+    Checks kind/mime, filename, sizes, the SHA-256 and the size of
+    the DECOMPRESSED bytes — so a node never accepts a payload whose
+    bytes do not match its hash claim, however it was compressed.
+    Decompression is capped so a compressed bomb cannot expand
+    past the 5 MB raw limit in memory."""
+    if not isinstance(data, dict):
+        return False, "payload must be an object"
+    kind = data.get("kind")
+    if kind not in PAYLOAD_KINDS:
+        return False, f"unknown payload kind {kind!r} (allowed: {list(PAYLOAD_KINDS)})"
+    mime = data.get("mime")
+    if kind == "ref":
+        if not isinstance(mime, str) or "/" not in mime:
+            return False, f"bad mime {mime!r} for ref payload"
+        uri = data.get("uri")
+        if not isinstance(uri, str) or not uri.startswith(("http://", "https://", "ipfs://", "magnet:")):
+            return False, "ref payload needs a uri starting with http://, https://, ipfs:// or magnet:"
+        if data.get("data_b64") not in ("", None):
+            return False, "ref payload must not carry inline data — the media is off-chain"
+    else:
+        if mime not in PAYLOAD_MIMES.get(kind, set()):
+            return False, f"mime {mime!r} is not allowed for kind {kind!r}"
+    if data.get("filename") is not None:
+        try:
+            _clean_filename(data.get("filename"))
+        except ValueError as e:
+            return False, f"bad filename: {e}"
+    original_size = data.get("original_size")
+    compressed_size = data.get("compressed_size")
+    if not isinstance(original_size, int) or original_size < 0:
+        return False, "original_size must be a non-negative integer"
+    if not isinstance(compressed_size, int) or compressed_size < 0:
+        return False, "compressed_size must be a non-negative integer"
+    if not _is_hex64(data.get("sha256_of_original")):
+        return False, "sha256_of_original must be 64 lowercase hex characters"
+    if data.get("compression") not in ("none", "zlib"):
+        return False, f"unknown compression {data.get('compression')!r}"
+    if kind == "ref":
+        if original_size <= 0:
+            return False, "ref payload original_size must be positive"
+        return True, "ok"
+    # Inline payloads: decode, decompress (capped), and verify.
+    try:
+        blob = base64.b64decode(data.get("data_b64", ""), validate=True)
+    except Exception:
+        return False, "data_b64 is not valid base64"
+    if kind == "text":
+        if data.get("compression") != "none":
+            return False, "text payloads are stored uncompressed (compression 'none')"
+        if len(blob) != original_size or len(blob) != compressed_size:
+            return False, "text payload size does not match original_size/compressed_size"
+        try:
+            text = blob.decode("utf-8")
+        except UnicodeDecodeError:
+            return False, "text payload is not valid UTF-8"
+        if len(text) > MAX_TEXT_CHARS:
+            return False, f"text payload is {len(text)} characters — max is {MAX_TEXT_CHARS}"
+    else:
+        if data.get("compression") != "zlib":
+            return False, "media payloads must use compression 'zlib'"
+        if len(blob) > MAX_COMPRESSED_BYTES:
+            return False, (f"compressed media is {len(blob)} bytes — max on-chain "
+                           f"is {MAX_COMPRESSED_BYTES} bytes; use a 'ref' payload instead")
+        if len(blob) != compressed_size:
+            return False, "compressed size does not match compressed_size"
+        if original_size > MAX_MEDIA_RAW_BYTES:
+            return False, (f"media is {original_size} bytes raw — max is "
+                           f"{MAX_MEDIA_RAW_BYTES} bytes; use a 'ref' payload instead")
+        try:
+            decomp = zlib.decompressobj()
+            out = decomp.decompress(blob, MAX_MEDIA_RAW_BYTES + 1)
+            out += decomp.flush()
+            if decomp.unconsumed_tail:
+                return False, "compressed data expands past the 5 MB raw limit"
+        except Exception as e:
+            return False, f"compressed data is corrupt (zlib error: {e})"
+        blob = out
+        if len(blob) != original_size:
+            return False, (f"decompressed size {len(blob)} does not match "
+                           f"original_size {original_size}")
+    if hashlib.sha256(blob).hexdigest() != data["sha256_of_original"]:
+        return False, "sha256 mismatch — payload bytes do not match sha256_of_original"
+    return True, "ok"
+
+
+def extract_payload_bytes(data: dict) -> bytes:
+    """Return the ORIGINAL bytes of a payload, after full validation.
+
+    Raises ValueError on any mismatch. For kind 'ref' there are no
+    inline bytes — it raises ValueError telling the caller to fetch
+    the media from data['uri'] and hash-check it themselves."""
+    ok, reason = validate_payload(data)
+    if not ok:
+        raise ValueError(f"invalid payload: {reason}")
+    if data["kind"] == "ref":
+        raise ValueError(
+            "ref payload has no inline bytes — fetch the media from "
+            f"{data['uri']!r} and check its SHA-256 against "
+            f"{data['sha256_of_original']}")
+    blob = base64.b64decode(data["data_b64"])
+    if data["compression"] == "zlib":
+        return zlib.decompress(blob)
+    return blob
+
+
+def extract_payload_to_file(data: dict, out_path: str) -> dict:
+    """Write a payload's original bytes to disk, verifying the hash.
+
+    The file is written, re-read, and re-hashed; if the hash of the
+    written file does not match sha256_of_original, the file is
+    removed and ValueError is raised. Returns an info dict."""
+    raw = extract_payload_bytes(data)
+    out = Path(out_path)
+    out.write_bytes(raw)
+    written_hash = hashlib.sha256(out.read_bytes()).hexdigest()
+    if written_hash != data["sha256_of_original"]:
+        out.unlink(missing_ok=True)
+        raise ValueError("written file hash does not match sha256_of_original — file removed")
+    return {
+        "kind": data["kind"],
+        "mime": data["mime"],
+        "filename": data.get("filename"),
+        "original_size": data["original_size"],
+        "compressed_size": data["compressed_size"],
+        "sha256_of_original": data["sha256_of_original"],
+        "path": str(out),
+        "sha256_verified": True,
+    }
+
+
+# --- testnet transaction signing (format v1 / v2) -------------------
+
+def testnet_tx_message(sender: str, recipient: str, amount: int, nonce: int,
+                      data=None) -> str:
+    """The message a testnet transaction is signed over.
+
+    v1 (no payload): sender|recipient|amount|nonce — unchanged.
+    v2 (payload):    sender|recipient|amount|nonce|<payload sha256>,
+    where the payload hash is the SHA-256 of the canonical payload
+    JSON. Tampering with any byte of the payload therefore breaks
+    both the signature and the txid."""
+    base = f"{sender}|{recipient}|{amount}|{nonce}"
+    if data is None:
+        return base
+    return f"{base}|{payload_sha256_hex(data)}"
+
+
+def testnet_tx_id(sender: str, recipient: str, amount: int, nonce: int,
+                  data=None) -> str:
+    return evo_hash_11(testnet_tx_message(sender, recipient, amount, nonce, data).encode("utf-8")).hex()
+
+
+def make_testnet_tx(wallet_path: str, password: str, recipient: str,
+                    amount: int, nonce: int, data=None) -> dict:
+    """Build a signed testnet transaction, optionally with a payload.
+
+    The payload is validated before signing, so a bad payload is
+    never signed. The wallet's private key is only loaded to sign;
+    it is never written into the transaction."""
+    if amount <= 0:
+        raise ValueError("amount must be a positive whole number of R0NI")
+    if data is not None:
+        ok, reason = validate_payload(data)
+        if not ok:
+            raise ValueError(f"invalid payload: {reason}")
+    wallet, priv = _load_private(password, wallet_path)
+    sender = wallet["address"]
+    message = testnet_tx_message(sender, recipient, amount, nonce, data)
+    tx = {
+        "sender": sender,
+        "recipient": recipient,
+        "amount": amount,
+        "nonce": nonce,
+        "signature": priv.sign(message.encode("utf-8")).hex(),
+        "sender_pubkey_hex": wallet["public_key_hex"],
+        "txid": testnet_tx_id(sender, recipient, amount, nonce, data),
+    }
+    if data is not None:
+        tx["data"] = data
+    return tx
 
 
 # ---------------------------------------------------------------------------
@@ -346,6 +722,72 @@ def self_test():
             if "insufficient balance" not in str(e):
                 raise
             print("10. overspend correctly rejected")
+        # Payloads (format v2): roundtrips + rejections.
+        import random
+        text = make_text_payload("Hello R0NI — a message on the chain")
+        assert validate_payload(text)[0] and extract_payload_bytes(text) == "Hello R0NI — a message on the chain".encode("utf-8")
+        print("11. text payload roundtrip ok")
+        try:
+            make_text_payload("x" * 1001)
+            print("12. FAIL: 1,001-char text accepted!")
+            raise SystemExit(1)
+        except ValueError as e:
+            assert "max is 1000" in str(e)
+            print("12. over-long text correctly rejected")
+        png = b"\x89PNG\r\n\x1a\n" + bytes(random.Random(7).randrange(256) for _ in range(5000))
+        img = make_media_payload(png, "image", "image/png", "test.png")
+        assert validate_payload(img)[0] and extract_payload_bytes(img) == png
+        info = extract_payload_to_file(img, f"{d}/out.png")
+        assert info["sha256_verified"] and Path(f"{d}/out.png").read_bytes() == png
+        print(f"13. image payload roundtrip ok (raw {len(png)} B, compressed {img['compressed_size']} B)")
+        # Incompressible data: 1.5 MB random -> compressed stays > 1 MB.
+        big_random = random.Random(42).randbytes(1_500_000)
+        try:
+            make_media_payload(big_random, "other", "application/octet-stream", "big.bin")
+            print("14. FAIL: >1 MB compressed payload accepted!")
+            raise SystemExit(1)
+        except ValueError as e:
+            assert "ref" in str(e)
+            print("14. incompressible >1 MB compressed payload correctly rejected (use ref)")
+        try:
+            make_media_payload(b"x" * (MAX_MEDIA_RAW_BYTES + 1), "other", "application/octet-stream")
+            print("15. FAIL: >5 MB raw payload accepted!")
+            raise SystemExit(1)
+        except ValueError as e:
+            assert "5 MB" in str(e) or "ref" in str(e)
+            print("15. >5 MB raw payload correctly rejected (use ref)")
+        corrupt = dict(img)
+        blob = bytearray(base64.b64decode(img["data_b64"]))
+        blob[len(blob) // 2] ^= 0xFF
+        corrupt["data_b64"] = base64.b64encode(bytes(blob)).decode()
+        assert not validate_payload(corrupt)[0]
+        print("16. corrupted compressed data correctly rejected")
+        bad_hash = dict(img)
+        bad_hash["sha256_of_original"] = "0" * 64
+        assert not validate_payload(bad_hash)[0]
+        print("17. sha256 mismatch correctly rejected")
+        bad_mime = dict(img)
+        bad_mime["mime"] = "text/plain"
+        assert not validate_payload(bad_mime)[0]
+        print("18. bad mime correctly rejected")
+        ref = make_ref_payload("https://example.invalid/song.mp3", "audio/mpeg",
+                               12_000_000, hashlib.sha256(b"song").hexdigest(), "song.mp3")
+        assert validate_payload(ref)[0]
+        print("19. off-chain ref payload validates ok")
+        tx2 = make_testnet_tx(p, "test-password", w2["address"], 100, 0, text)
+        assert tx2["data"] == text and tx2["txid"] == testnet_tx_id(
+            tx2["sender"], tx2["recipient"], 100, 0, text)
+        assert verify_signature(tx2["sender_pubkey_hex"],
+                                testnet_tx_message(tx2["sender"], tx2["recipient"], 100, 0, text),
+                                tx2["signature"])
+        tx2_tampered = dict(tx2)
+        tx2_tampered["data"] = make_text_payload("tampered")
+        assert tx2_tampered["txid"] != testnet_tx_id(
+            tx2_tampered["sender"], tx2_tampered["recipient"], 100, 0, tx2_tampered["data"])
+        print("20. signed v2 tx ok; tampering the payload changes the txid (signature breaks)")
+        tx1 = make_testnet_tx(p, "test-password", w2["address"], 100, 1)
+        assert "data" not in tx1
+        print("21. v1 tx without payload still works (backward compatible)")
     print("ALL TESTS PASSED")
 
 
@@ -360,6 +802,36 @@ def _usage():
     print("  python3 roni_wallet.py allocate-genesis <ledger.json> <wallet.json>")
     print("  python3 roni_wallet.py balance <ledger.json> <address>")
     print("  python3 roni_wallet.py transfer <ledger.json> <wallet.json> <password> <to-address> <amount>")
+    print("  python3 roni_wallet.py payload-text <message>")
+    print("  python3 roni_wallet.py payload-file <path> [--kind K] [--mime M]")
+    print("  python3 roni_wallet.py payload-ref <uri> <mime> <size> <sha256> [--filename F]")
+    print("  python3 roni_wallet.py validate-payload <payload.json>")
+    print("  python3 roni_wallet.py make-tx <wallet.json> <password> <to> <amount> <nonce> [payload.json]")
+    print("  python3 roni_wallet.py extract <tx.json> <output-path>")
+
+
+_KIND_BY_EXT = {
+    ".png": ("image", "image/png"), ".jpg": ("image", "image/jpeg"),
+    ".jpeg": ("image", "image/jpeg"), ".webp": ("image", "image/webp"),
+    ".gif": ("gif", "image/gif"),
+    ".wav": ("audio", "audio/wav"), ".mp3": ("audio", "audio/mpeg"),
+    ".ogg": ("audio", "audio/ogg"),
+    ".mp4": ("video", "video/mp4"), ".webm": ("video", "video/webm"),
+    ".mov": ("video", "video/quicktime"),
+    ".txt": ("text", "text/plain"),
+}
+
+
+def _payload_file_cli(path, kind=None, mime=None):
+    """Build a payload from a file on disk (payload-file CLI)."""
+    raw = Path(path).read_bytes()
+    ext = Path(path).suffix.lower()
+    if ext == ".txt" and kind is None and mime is None:
+        return make_text_payload(raw.decode("utf-8"))
+    inferred_kind, inferred_mime = _KIND_BY_EXT.get(ext, ("other", "application/octet-stream"))
+    kind = kind or inferred_kind
+    mime = mime or inferred_mime
+    return make_media_payload(raw, kind, mime, Path(path).name)
 
 
 if __name__ == "__main__":
@@ -397,5 +869,52 @@ if __name__ == "__main__":
         except ValueError:
             raise SystemExit("amount must be a whole number of R0NI") from None
         print(json.dumps(record_transfer(args[1], args[2], args[3], args[4], amount), indent=2))
+    elif args[0] == "payload-text" and len(args) == 2:
+        try:
+            print(json.dumps(make_text_payload(args[1]), indent=2))
+        except ValueError as e:
+            raise SystemExit(str(e)) from None
+    elif args[0] == "payload-file" and len(args) >= 2:
+        opts = dict(a.split("=", 1) for a in args[2:] if a.startswith("--") and "=" in a)
+        try:
+            print(json.dumps(_payload_file_cli(args[1], opts.get("kind"), opts.get("mime")), indent=2))
+        except (ValueError, UnicodeDecodeError) as e:
+            raise SystemExit(str(e)) from None
+    elif args[0] == "payload-ref" and len(args) >= 5:
+        opts = dict(a.split("=", 1) for a in args[5:] if a.startswith("--") and "=" in a)
+        try:
+            size = int(args[3])
+        except ValueError:
+            raise SystemExit("original size must be a whole number of bytes") from None
+        try:
+            print(json.dumps(make_ref_payload(args[1], args[2], size, args[4],
+                                              opts.get("filename")), indent=2))
+        except ValueError as e:
+            raise SystemExit(str(e)) from None
+    elif args[0] == "validate-payload" and len(args) == 2:
+        data = json.loads(Path(args[1]).read_text())
+        ok, reason = validate_payload(data)
+        print(json.dumps({"valid": ok, "reason": reason}, indent=2))
+        raise SystemExit(0 if ok else 1)
+    elif args[0] == "make-tx" and len(args) in (6, 7):
+        try:
+            amount, nonce = int(args[4]), int(args[5])
+        except ValueError:
+            raise SystemExit("amount and nonce must be whole numbers") from None
+        data = None
+        if len(args) == 7:
+            data = json.loads(Path(args[6]).read_text())
+        try:
+            print(json.dumps(make_testnet_tx(args[1], args[2], args[3], amount, nonce, data), indent=2))
+        except (ValueError, SystemExit) as e:
+            raise SystemExit(str(e)) from None
+    elif args[0] == "extract" and len(args) == 3:
+        tx = json.loads(Path(args[1]).read_text())
+        if "data" not in tx or tx["data"] is None:
+            raise SystemExit("transaction has no payload (no 'data' field)")
+        try:
+            print(json.dumps(extract_payload_to_file(tx["data"], args[2]), indent=2))
+        except ValueError as e:
+            raise SystemExit(str(e)) from None
     else:
         _usage()

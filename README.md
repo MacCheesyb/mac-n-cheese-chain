@@ -71,6 +71,30 @@ for now. Pick one of these — they all use the same local ledger format
    wallet-app.html v0.4, via the vendored `@noble/hashes` 1.8.0
    EvoHash-11 bundle in `extension/evo-hash-11.js`).
 
+### Message / media payloads — transactions can carry content
+
+A transaction can include a message or media (transaction
+format v2, 2026-11-19): a text message, picture, song, short
+video, GIF, or other digital file — so the chain has utility
+beyond moving numbers. The payload is an optional `"data"`
+field on the transaction, and transactions without one are
+still valid (format v1).
+
+- **Text:** up to 1,000 characters, stored uncompressed.
+- **Media:** up to 5 MB raw, zlib level 9, max 1 MB compressed
+  on-chain. Anything bigger is rejected — use a `ref` payload
+  instead (SHA-256 + URI on-chain, media itself off-chain).
+- **Lossless:** nodes decompress and check the SHA-256 and
+  size on receipt, extraction re-checks the hash, and the
+  payload is covered by the transaction signature — what comes
+  out is byte-identical to what went in, or it is rejected.
+- **Attach / extract:** `python3 roni_wallet.py payload-text`,
+  `payload-file`, `payload-ref`, `make-tx`, `extract` — see
+  `roni_wallet.py` usage and `testnet/README.md`. Tested
+  end-to-end on the testnet: text, PNG, GIF, WAV and a real
+  1-second MP4 all round-tripped byte-identical through mined
+  blocks (see `testnet/ANALYTICS.md`).
+
 ### Genesis allocation — empty until Mac creates his wallet
 
 `genesis_allocation.json` in this repo has `"allocations": []` on

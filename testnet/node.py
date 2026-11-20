@@ -14,6 +14,16 @@ verified before acceptance. No transaction is ever signed
 from Mac's address — the testnet has no private key for it;
 transactions TO Mac's address are inbound only.
 
+Message / media payloads (transaction format v2): a transaction
+may carry an optional "data" payload (text, image, audio, video,
+GIF, other, or an off-chain "ref"). The node validates the
+payload on receipt — kind/mime, zlib integrity, decompressed
+size, SHA-256 of the original bytes — and the payload is covered
+by the signature, so tampering with it breaks the signature.
+Limits: text 1,000 chars; media 5 MB raw / 1 MB compressed
+on-chain; anything bigger is rejected (use a "ref" payload).
+See roni_wallet.py for the format and the reasons.
+
 Usage:
   python3 node.py --port 8001 --data-dir /tmp/node1 \
       --peers http://127.0.0.1:8002,http://127.0.0.1:8003 \
@@ -34,12 +44,18 @@ from pathlib import Path
 # Reuse the exact EvoHash-11 from the repo (roni_wallet.py).
 REPO_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO_ROOT))
-from roni_wallet import evo_hash_11, r0ni_address  # noqa: E402
+from roni_wallet import (  # noqa: E402
+    evo_hash_11, r0ni_address, testnet_tx_message, validate_payload,
+)
 
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PublicKey  # noqa: E402
 
 DIFFICULTY = "0000"
 MAX_TX_PER_BLOCK = 10
+# A block holds at most 10 transactions, each payload at most 1 MB
+# compressed, so a block can never exceed ~10 MB of payload plus
+# overhead. Anything bigger is rejected — see validate_block().
+MAX_BLOCK_BYTES = 11_000_000
 
 
 def block_hash(block):
@@ -54,7 +70,14 @@ def block_hash(block):
 
 
 def tx_message(tx):
-    return f"{tx['sender']}|{tx['recipient']}|{tx['amount']}|{tx['nonce']}"
+    """The signed message for a transaction (shared with roni_wallet).
+
+    v1 (no "data"): sender|recipient|amount|nonce — unchanged, so
+    old transactions still validate. v2 (payload): the message also
+    carries the SHA-256 of the canonical payload JSON, so tampering
+    with the payload breaks the signature and the txid."""
+    return testnet_tx_message(tx["sender"], tx["recipient"], tx["amount"],
+                              tx["nonce"], tx.get("data"))
 
 
 def tx_id(tx):
@@ -62,7 +85,10 @@ def tx_id(tx):
 
 
 def verify_tx(tx):
-    """Return (ok, reason). Checks address/pubkey match, signature, format."""
+    """Return (ok, reason). Checks address/pubkey match, signature,
+    format — and, for v2 transactions, the payload (see
+    roni_wallet.validate_payload): kind/mime, zlib integrity,
+    decompressed size, and SHA-256 of the original bytes."""
     try:
         if set(tx) < {"sender", "recipient", "amount", "nonce", "signature", "sender_pubkey_hex"}:
             return False, "missing fields"
@@ -70,6 +96,10 @@ def verify_tx(tx):
             return False, "amount must be a positive integer"
         if r0ni_address(bytes.fromhex(tx["sender_pubkey_hex"])) != tx["sender"]:
             return False, "address does not match sender public key"
+        if "data" in tx and tx["data"] is not None:
+            ok, reason = validate_payload(tx["data"])
+            if not ok:
+                return False, f"invalid payload: {reason}"
         if tx_id(tx) != tx.get("txid", tx_id(tx)) and "txid" in tx:
             return False, "txid mismatch"
         pub = Ed25519PublicKey.from_public_bytes(bytes.fromhex(tx["sender_pubkey_hex"]))
@@ -162,6 +192,8 @@ class Node:
     def validate_block(self, block):
         if block["index"] != len(self.chain):
             return False, f"bad index: expected {len(self.chain)}, got {block['index']}"
+        if len(json.dumps(block).encode("utf-8")) > MAX_BLOCK_BYTES:
+            return False, f"block exceeds {MAX_BLOCK_BYTES} bytes"
         if block["previous_hash"] != self.chain[-1]["hash"]:
             return False, "previous_hash does not match chain tip"
         if block["hash"] != block_hash(block):
