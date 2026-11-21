@@ -1,0 +1,742 @@
+{
+  "testnet": "R0NI v1-vs-v2 comparison",
+  "machine": "1 Linux VM, shared CPU",
+  "benchmarks": {
+    "evo_hash_11": {
+      "hashes": 10000,
+      "seconds": 0.138,
+      "us_per_hash": 13.8,
+      "hashes_per_second": 72448.3,
+      "note": "same function for v1 and v2 \u2014 EvoHash-11 is unchanged"
+    },
+    "v1 block_hash": {
+      "hashes": 10000,
+      "seconds": 0.195,
+      "us_per_hash": 19.54
+    },
+    "v2 block_hash": {
+      "hashes": 10000,
+      "seconds": 0.175,
+      "us_per_hash": 17.47
+    },
+    "v2 is_valid_hash_format": {
+      "checks": 10000,
+      "seconds": 0.055,
+      "us_per_check": 5.52
+    },
+    "mining v1": {
+      "blocks": 20,
+      "mean_attempts": 56372.3,
+      "mean_seconds_per_block": 1.0089,
+      "min_seconds": 0.0221,
+      "max_seconds": 2.8524
+    },
+    "mining v2": {
+      "blocks": 20,
+      "mean_attempts": 64301.5,
+      "mean_seconds_per_block": 1.1517,
+      "min_seconds": 0.0347,
+      "max_seconds": 3.8023
+    },
+    "validate_block v1": {
+      "validations": 200,
+      "seconds": 0.005,
+      "us_per_validation": 26.94
+    },
+    "validate_block v2": {
+      "validations": 200,
+      "seconds": 0.006,
+      "us_per_validation": 32.22
+    }
+  },
+  "fresh_runs": {
+    "v1": {
+      "wall_seconds": 35.0,
+      "analytics": {
+        "testnet": "R0NI testnet (prototype, simulated)",
+        "simulation": "3 nodes as separate OS processes on ONE Linux VM (127.0.0.1:8001-8003), separate data dirs, localhost HTTP P2P. NOT multiple real VMs. Docker not available.",
+        "miner": "node 1 only (single miner avoids competing forks in this demo)",
+        "difficulty": "0000 (EvoHash-11)",
+        "nodes": 3,
+        "topology": "full mesh, ports 8001/8002/8003, each peered to the other two",
+        "genesis_test_funds_per_test_wallet": 1000000,
+        "mac_address": "R0NI-ebeb98a5aeea016f49e6abf1c8b1e492317a102d",
+        "mac_address_balance": 2392,
+        "mac_address_note": "inbound only \u2014 no transaction was ever signed from Mac's address; we do not have his private key. A transaction FROM Mac's address requires Mac to sign in his own wallet app.",
+        "test_wallets": [
+          {
+            "name": "test-A",
+            "address": "R0NI-f682358063ca0e2a3f746a4661e4e455d956e7dd",
+            "balance": 999045
+          },
+          {
+            "name": "test-B",
+            "address": "R0NI-a59f87562bd748bf72a97f36fba616af084c9c38",
+            "balance": 999299
+          },
+          {
+            "name": "test-C",
+            "address": "R0NI-d8ad22d8b3b1cc4503db94d4e615c0a67ce014e1",
+            "balance": 999264
+          },
+          {
+            "name": "disposable",
+            "address": "R0NI-e56d2126ff80182ffd2a2f5dd7527ac9fa44dd38",
+            "balance": 0
+          }
+        ],
+        "disposable_wallet": {
+          "address": "R0NI-e56d2126ff80182ffd2a2f5dd7527ac9fa44dd38",
+          "public_key_hex": "26a501d1fb5c48c97dac5ce59570bfdcf0e799cc6d0d790b697559165093f31e",
+          "funded_amount_mirrored": 0,
+          "status": "awaiting funding from Mac (one signed transfer in-app from genesis, suggested 1,000 R0NI)",
+          "private_key_location": "~/workspace/r0ni-testnet/disposable-wallet.json (NOT in the public repo)"
+        },
+        "transactions_submitted_phase1": 20,
+        "payload_tests": {
+          "text": {
+            "kind": "text",
+            "mime": "text/plain",
+            "original_size": 157,
+            "compressed_size": 157,
+            "sha256_match": true,
+            "byte_identical": true
+          },
+          "image": {
+            "kind": "image",
+            "mime": "image/png",
+            "original_size": 92,
+            "compressed_size": 93,
+            "sha256_match": true,
+            "byte_identical": true
+          },
+          "gif": {
+            "kind": "gif",
+            "mime": "image/gif",
+            "original_size": 35,
+            "compressed_size": 36,
+            "sha256_match": true,
+            "byte_identical": true
+          },
+          "audio": {
+            "kind": "audio",
+            "mime": "audio/wav",
+            "original_size": 8044,
+            "compressed_size": 520,
+            "sha256_match": true,
+            "byte_identical": true
+          },
+          "video": {
+            "kind": "video",
+            "mime": "video/mp4",
+            "original_size": 5390,
+            "compressed_size": 4816,
+            "sha256_match": true,
+            "byte_identical": true
+          },
+          "ref": {
+            "kind": "ref",
+            "mime": "audio/mpeg",
+            "original_size": 12000000,
+            "compressed_size": 0,
+            "note": "off-chain reference only \u2014 media stays off-chain",
+            "sha256_match": true,
+            "byte_identical": null
+          },
+          "video_is_real_ffmpeg_mp4": true
+        },
+        "payload_limits": {
+          "text_max_chars": 1000,
+          "media_max_raw_bytes": 5000000,
+          "media_max_compressed_bytes_on_chain": 1000000,
+          "compression": "zlib level 9 (media), none (text)",
+          "integrity": "SHA-256 of original bytes + decompressed size, checked by nodes on receipt and again on extraction; payload covered by the transaction signature",
+          "oversize_policy": "rejected \u2014 use kind 'ref' (SHA-256 + URI on-chain, media off-chain)"
+        },
+        "transactions_submitted_burst": 30,
+        "transactions_confirmed_total": 58,
+        "transactions_rejected_security_tests": 5,
+        "mean_submit_latency_ms_phase1": 10.1,
+        "mean_submit_latency_ms_burst": 8.7,
+        "burst_tps_confirmed": 2.62,
+        "burst_submit_seconds": 0.26,
+        "burst_confirm_seconds": 11.46,
+        "blocks": 10,
+        "mean_block_time_seconds": 3.78,
+        "median_block_time_seconds": 2,
+        "node_restart_sync_seconds": 0.3,
+        "nodes_agree_on_chain": true,
+        "security_tests": {
+          "double_spend_same_nonce": {
+            "accepted": false,
+            "status": 400,
+            "reason": {
+              "accepted": false,
+              "reason": "bad nonce: expected 18, got 17"
+            }
+          },
+          "overspend": {
+            "accepted": false,
+            "status": 400,
+            "reason": {
+              "accepted": false,
+              "reason": "insufficient balance (incl. pending spends)"
+            }
+          },
+          "forged_signature": {
+            "accepted": false,
+            "status": 400,
+            "reason": {
+              "accepted": false,
+              "reason": "signature verification failed: "
+            }
+          },
+          "tampered_amount": {
+            "accepted": false,
+            "status": 400,
+            "reason": {
+              "accepted": false,
+              "reason": "txid mismatch"
+            }
+          },
+          "tampered_block": {
+            "accepted": false,
+            "status": 400,
+            "reason": {
+              "accepted": false,
+              "reason": "block hash does not match recomputed EvoHash-11"
+            }
+          }
+        },
+        "machine": "1 Linux VM, 4 vCPU (AMD EPYC 9D25), ~8 GB RAM, shared CPU",
+        "from_mac_address": "NOT TESTED \u2014 requires Mac to sign in his own wallet app",
+        "outbound_genesis_spend": "requires Mac to sign in his own wallet app (standalone wallet-app.html). The testnet NEVER holds or uses the genesis private key. A signed transaction he creates in-app can be submitted with testnet/accept_signed_tx.py, which verifies the signature and lets the node re-verify it before acceptance. No such signed transaction was provided in this run.",
+        "recommended_path": "Mac makes ONE signed transfer in-app from genesis to a fresh disposable test wallet (small amount). The testnet then uses THAT disposable test wallet's keypair (test-only, generated by the testnet) for further spending tests \u2014 never the genesis key."
+      }
+    },
+    "v2": {
+      "wall_seconds": 42.9,
+      "analytics": {
+        "testnet": "R0NI testnet v2 (prototype, simulated)",
+        "hash_format": "v2 block hashes are \"R-\" + 128 hex chars of EvoHash-11; the \"R\" is a label, NOT part of the hash (hex has no R). Difficulty \"0000\" applies to the hex part immediately after \"R-\". Plain hex hashes are rejected.",
+        "v2_genesis": {
+          "data": "R0NI testnet v2 genesis \u2014 R- block hashes \u2014 circulating supply 100000 to start",
+          "hash": "R-00003b34c123d3f43722be1da0b98160578428be9332400ea70ab94ca8fcdc85c8f633b485f28456853e4c588eef81f4476382f53f916c2c6b7c1f34d4b11e06",
+          "nonce": 12147,
+          "timestamp": 1795209853
+        },
+        "governance": {
+          "proposal_id": "PROP-d2eac88618a3b70eca3f7e0b796034d1da0d8346",
+          "per_option": {
+            "yes": 1998740,
+            "no": 999060
+          },
+          "total_voting_power": 2997800,
+          "votes_counted": 3,
+          "quorum": 10000,
+          "quorum_met": true,
+          "winner": "yes",
+          "passed": true,
+          "status": "open"
+        },
+        "simulation": "3 nodes as separate OS processes on ONE Linux VM (127.0.0.1:8021-8023), separate data dirs, localhost HTTP P2P. NOT multiple real VMs. Docker not available.",
+        "miner": "node 1 only (single miner avoids competing forks in this demo)",
+        "difficulty": "0000 on the hex part after \"R-\" (EvoHash-11)",
+        "nodes": 3,
+        "topology": "full mesh, ports 8021/8022/8023, each peered to the other two",
+        "genesis_test_funds_per_test_wallet": 1000000,
+        "mac_address": "R0NI-ebeb98a5aeea016f49e6abf1c8b1e492317a102d",
+        "mac_address_balance": 2392,
+        "mac_address_note": "inbound only \u2014 no transaction was ever signed from Mac's address; we do not have his private key. A transaction FROM Mac's address requires Mac to sign in his own wallet app.",
+        "test_wallets": [
+          {
+            "name": "test-A",
+            "address": "R0NI-9afc25cfb2b3418c5bf743961762780d621d7385",
+            "balance": 999045
+          },
+          {
+            "name": "test-B",
+            "address": "R0NI-ff549990390205386fcdadbaac2c2ab27a911d8c",
+            "balance": 999299
+          },
+          {
+            "name": "test-C",
+            "address": "R0NI-d1172d3610a6db1cdb16a75690c10dd6a5bff6f3",
+            "balance": 999264
+          },
+          {
+            "name": "disposable",
+            "address": "R0NI-e56d2126ff80182ffd2a2f5dd7527ac9fa44dd38",
+            "balance": 0
+          }
+        ],
+        "disposable_wallet": {
+          "address": "R0NI-e56d2126ff80182ffd2a2f5dd7527ac9fa44dd38",
+          "public_key_hex": "26a501d1fb5c48c97dac5ce59570bfdcf0e799cc6d0d790b697559165093f31e",
+          "funded_amount_mirrored": 0,
+          "status": "awaiting funding from Mac (one signed transfer in-app from genesis, suggested 1,000 R0NI)",
+          "private_key_location": "~/workspace/r0ni-testnet/disposable-wallet.json (NOT in the public repo)"
+        },
+        "transactions_submitted_phase1": 20,
+        "payload_tests": {
+          "text": {
+            "kind": "text",
+            "mime": "text/plain",
+            "original_size": 157,
+            "compressed_size": 157,
+            "sha256_match": true,
+            "byte_identical": true
+          },
+          "image": {
+            "kind": "image",
+            "mime": "image/png",
+            "original_size": 92,
+            "compressed_size": 93,
+            "sha256_match": true,
+            "byte_identical": true
+          },
+          "gif": {
+            "kind": "gif",
+            "mime": "image/gif",
+            "original_size": 35,
+            "compressed_size": 36,
+            "sha256_match": true,
+            "byte_identical": true
+          },
+          "audio": {
+            "kind": "audio",
+            "mime": "audio/wav",
+            "original_size": 8044,
+            "compressed_size": 520,
+            "sha256_match": true,
+            "byte_identical": true
+          },
+          "video": {
+            "kind": "video",
+            "mime": "video/mp4",
+            "original_size": 5390,
+            "compressed_size": 4816,
+            "sha256_match": true,
+            "byte_identical": true
+          },
+          "ref": {
+            "kind": "ref",
+            "mime": "audio/mpeg",
+            "original_size": 12000000,
+            "compressed_size": 0,
+            "note": "off-chain reference only \u2014 media stays off-chain",
+            "sha256_match": true,
+            "byte_identical": null
+          },
+          "video_is_real_ffmpeg_mp4": true
+        },
+        "payload_limits": {
+          "text_max_chars": 1000,
+          "media_max_raw_bytes": 5000000,
+          "media_max_compressed_bytes_on_chain": 1000000,
+          "compression": "zlib level 9 (media), none (text)",
+          "integrity": "SHA-256 of original bytes + decompressed size, checked by nodes on receipt and again on extraction; payload covered by the transaction signature",
+          "oversize_policy": "rejected \u2014 use kind 'ref' (SHA-256 + URI on-chain, media off-chain)"
+        },
+        "transactions_submitted_burst": 30,
+        "transactions_confirmed_total": 62,
+        "transactions_rejected_security_tests": 5,
+        "mean_submit_latency_ms_phase1": 9.3,
+        "mean_submit_latency_ms_burst": 8.8,
+        "burst_tps_confirmed": 4.34,
+        "burst_submit_seconds": 0.26,
+        "burst_confirm_seconds": 6.91,
+        "blocks": 12,
+        "mean_block_time_seconds": 3.73,
+        "median_block_time_seconds": 3,
+        "node_restart_sync_seconds": 0.3,
+        "nodes_agree_on_chain": true,
+        "security_tests": {
+          "double_spend_same_nonce": {
+            "accepted": false,
+            "status": 400,
+            "reason": {
+              "accepted": false,
+              "reason": "bad nonce: expected 19, got 18"
+            }
+          },
+          "overspend": {
+            "accepted": false,
+            "status": 400,
+            "reason": {
+              "accepted": false,
+              "reason": "insufficient balance (incl. pending spends)"
+            }
+          },
+          "forged_signature": {
+            "accepted": false,
+            "status": 400,
+            "reason": {
+              "accepted": false,
+              "reason": "signature verification failed: "
+            }
+          },
+          "tampered_amount": {
+            "accepted": false,
+            "status": 400,
+            "reason": {
+              "accepted": false,
+              "reason": "txid mismatch"
+            }
+          },
+          "tampered_block": {
+            "accepted": false,
+            "status": 400,
+            "reason": {
+              "accepted": false,
+              "reason": "block hash does not match recomputed EvoHash-11"
+            }
+          }
+        },
+        "machine": "1 Linux VM, 4 vCPU (AMD EPYC 9D25), ~8 GB RAM, shared CPU",
+        "from_mac_address": "NOT TESTED \u2014 requires Mac to sign in his own wallet app",
+        "outbound_genesis_spend": "requires Mac to sign in his own wallet app (standalone wallet-app.html). The testnet NEVER holds or uses the genesis private key. A signed transaction he creates in-app can be submitted with testnet-v2/accept_signed_tx.py, which verifies the signature and lets the node re-verify it before acceptance. No such signed transaction was provided in this run.",
+        "recommended_path": "Mac makes ONE signed transfer in-app from genesis to a fresh disposable test wallet (small amount). The testnet then uses THAT disposable test wallet's keypair (test-only, generated by the testnet) for further spending tests \u2014 never the genesis key."
+      }
+    }
+  },
+  "committed_v2_run": {
+    "genesis_hash": "R-0000f268031649e33f13d6868aab86cde180413818abc0c24cbcf766d156dd1f4f3c974284f9ffc0b5d43b7226304f6d21fd7fc82edd1c7f296dfe5255aecdb5",
+    "genesis_nonce": 2060,
+    "genesis_timestamp": 1795209315,
+    "ports": [
+      8031,
+      8032,
+      8033
+    ],
+    "note": "nodes started with --genesis testnet-v2/genesis.json (the committed file, NOT re-mined). The 3 funded test wallets in that genesis have no stored private keys, so this run drives blocks with amount-0 gov-propose / cert-mint txs from fresh wallets (valid: no balance needed, nonce 0, signed) \u2014 regular transfers cannot be sent on this genesis without a funded key.",
+    "genesis_on_all_nodes": {
+      "8031": "R-0000f268031649e33f13d6868aab86cde180413818abc0c24cbcf766d156dd1f4f3c974284f9ffc0b5d43b7226304f6d21fd7fc82edd1c7f296dfe5255aecdb5",
+      "8032": "R-0000f268031649e33f13d6868aab86cde180413818abc0c24cbcf766d156dd1f4f3c974284f9ffc0b5d43b7226304f6d21fd7fc82edd1c7f296dfe5255aecdb5",
+      "8033": "R-0000f268031649e33f13d6868aab86cde180413818abc0c24cbcf766d156dd1f4f3c974284f9ffc0b5d43b7226304f6d21fd7fc82edd1c7f296dfe5255aecdb5"
+    },
+    "heights_at_start": {
+      "8031": 1,
+      "8032": 1,
+      "8033": 1
+    },
+    "gov_propose_submit": {
+      "status": 200,
+      "response": {
+        "accepted": true,
+        "reason": "accepted into mempool"
+      },
+      "proposal_id": "PROP-8f4206f7d82c3942046fb920fcfb6b1334da5763"
+    },
+    "gov_propose_confirm_seconds": 1.58,
+    "proposal_on_chain": true,
+    "cert_mint_submit": {
+      "status": 200,
+      "response": {
+        "accepted": true,
+        "reason": "accepted into mempool"
+      },
+      "cert_id": "CERT-e5e0b91e6312bd4c722347a7455daeb7fd68634f"
+    },
+    "cert_mint_confirm_seconds": 1.26,
+    "cert_on_chain": true,
+    "zero_balance_vote": {
+      "accepted": false,
+      "status": 400,
+      "reason": {
+        "accepted": false,
+        "reason": "voter R0NI-a2c997da538fd4137ac48a4943fbf29236780c04 held 0 R0NI at the snapshot (block 1) \u2014 zero-balance addresses cannot vote"
+      }
+    },
+    "security_probes": {
+      "double_spend_same_nonce": {
+        "accepted": false,
+        "status": 400,
+        "reason": {
+          "accepted": false,
+          "reason": "bad nonce: expected 1, got 0"
+        }
+      },
+      "overspend": {
+        "accepted": false,
+        "status": 400,
+        "reason": {
+          "accepted": false,
+          "reason": "insufficient balance (incl. pending spends)"
+        }
+      },
+      "forged_signature": {
+        "accepted": false,
+        "status": 400,
+        "reason": {
+          "accepted": false,
+          "reason": "signature verification failed: "
+        }
+      },
+      "tampered_amount": {
+        "accepted": false,
+        "status": 400,
+        "reason": {
+          "accepted": false,
+          "reason": "txid mismatch"
+        }
+      },
+      "tampered_block": {
+        "accepted": false,
+        "status": 400,
+        "reason": {
+          "accepted": false,
+          "reason": "block hash does not match recomputed EvoHash-11"
+        }
+      }
+    },
+    "node_restart_sync_seconds": 0.3,
+    "final_height": 4,
+    "blocks": 4,
+    "transactions_confirmed": 6,
+    "nodes_agree": true,
+    "all_block_hashes_R-": true,
+    "block_hashes": [
+      "R-0000f268031649e33f13d6868aab86cde180413818abc0c24cbcf766d156dd1f4f3c974284f9ffc0b5d43b7226304f6d21fd7fc82edd1c7f296dfe5255aecdb5",
+      "R-0000dd1b03123aaea0d2d33b0d92adb82d29a40fb0f4cc23fd6fbe737957f7821b3efac90380adb1b2a10a66bc7418a00e8dd97ae6b5bedd7a22c29fc06f5bc5",
+      "R-0000acaeb79ac35a1333c8b9b590e05720ad5944dd12289707ec8647b68f5802905419aee2cf583e24a5576bddb33dfc54594ec3e518b02dcd43f127792091db",
+      "R-0000f0fc6ef82fd5692d43f346796debcbf3474fa742df025e821441bc46e008e8df24e3c8e158fb924e4bc9b6223c81e16b271c75241fbc05e02e0d76eb7f82"
+    ]
+  },
+  "security": {
+    "v2_prefix_rejections": {
+      "plain_hex_hash": {
+        "accepted": false,
+        "reason": "block hash must be 'R-' + 128 hex chars (v2 format)"
+      },
+      "wrong_prefix_X-": {
+        "accepted": false,
+        "reason": "block hash must be 'R-' + 128 hex chars (v2 format)"
+      },
+      "R-_without_0000": {
+        "accepted": false,
+        "reason": "block does not meet difficulty 0000 (hex part after 'R-')"
+      },
+      "tampered_block_v2": {
+        "accepted": false,
+        "reason": "block hash does not match recomputed EvoHash-11"
+      },
+      "v1_node_given_R-_hash": {
+        "accepted": false,
+        "reason": "block hash does not match recomputed EvoHash-11"
+      }
+    },
+    "validation_logic_comparison": "v2 adds exactly one check v1 lacks: is_valid_hash_format ('R-' + 128 hex). Everything else \u2014 recompute, difficulty on the hex part, previous_hash link, tx validation \u2014 is identical. The extra check can only reject, never accept something v1 would reject: v2 is strictly stricter than v1 on block hashes.",
+    "v1": {
+      "double_spend_same_nonce": {
+        "accepted": false,
+        "status": 400,
+        "reason": {
+          "accepted": false,
+          "reason": "bad nonce: expected 18, got 17"
+        }
+      },
+      "overspend": {
+        "accepted": false,
+        "status": 400,
+        "reason": {
+          "accepted": false,
+          "reason": "insufficient balance (incl. pending spends)"
+        }
+      },
+      "forged_signature": {
+        "accepted": false,
+        "status": 400,
+        "reason": {
+          "accepted": false,
+          "reason": "signature verification failed: "
+        }
+      },
+      "tampered_amount": {
+        "accepted": false,
+        "status": 400,
+        "reason": {
+          "accepted": false,
+          "reason": "txid mismatch"
+        }
+      },
+      "tampered_block": {
+        "accepted": false,
+        "status": 400,
+        "reason": {
+          "accepted": false,
+          "reason": "block hash does not match recomputed EvoHash-11"
+        }
+      }
+    },
+    "v2": {
+      "double_spend_same_nonce": {
+        "accepted": false,
+        "status": 400,
+        "reason": {
+          "accepted": false,
+          "reason": "bad nonce: expected 19, got 18"
+        }
+      },
+      "overspend": {
+        "accepted": false,
+        "status": 400,
+        "reason": {
+          "accepted": false,
+          "reason": "insufficient balance (incl. pending spends)"
+        }
+      },
+      "forged_signature": {
+        "accepted": false,
+        "status": 400,
+        "reason": {
+          "accepted": false,
+          "reason": "signature verification failed: "
+        }
+      },
+      "tampered_amount": {
+        "accepted": false,
+        "status": 400,
+        "reason": {
+          "accepted": false,
+          "reason": "txid mismatch"
+        }
+      },
+      "tampered_block": {
+        "accepted": false,
+        "status": 400,
+        "reason": {
+          "accepted": false,
+          "reason": "block hash does not match recomputed EvoHash-11"
+        }
+      }
+    }
+  },
+  "effectiveness": {
+    "v1": {
+      "transactions_confirmed_total": 58,
+      "blocks": 10,
+      "nodes": 3,
+      "nodes_agree": true,
+      "burst_tps_confirmed": 2.62,
+      "mean_submit_latency_ms_phase1": 10.1,
+      "mean_submit_latency_ms_burst": 8.7,
+      "mean_block_time_seconds": 3.78,
+      "median_block_time_seconds": 2,
+      "node_restart_sync_seconds": 0.3,
+      "governance": null,
+      "media_payloads_byte_identical": false,
+      "mac_balance": 2392
+    },
+    "v2": {
+      "transactions_confirmed_total": 62,
+      "blocks": 12,
+      "nodes": 3,
+      "nodes_agree": true,
+      "burst_tps_confirmed": 4.34,
+      "mean_submit_latency_ms_phase1": 9.3,
+      "mean_submit_latency_ms_burst": 8.8,
+      "mean_block_time_seconds": 3.73,
+      "median_block_time_seconds": 3,
+      "node_restart_sync_seconds": 0.3,
+      "governance": {
+        "proposal_id": "PROP-d2eac88618a3b70eca3f7e0b796034d1da0d8346",
+        "per_option": {
+          "yes": 1998740,
+          "no": 999060
+        },
+        "total_voting_power": 2997800,
+        "votes_counted": 3,
+        "quorum": 10000,
+        "quorum_met": true,
+        "winner": "yes",
+        "passed": true,
+        "status": "open"
+      },
+      "media_payloads_byte_identical": false,
+      "mac_balance": 2392
+    }
+  },
+  "test_suites": {
+    "v1": {
+      "testnet/test_payloads.py": {
+        "exit": 0,
+        "tail": [
+          "  bad_mime                 REJECTED (400: invalid payload: mime 'text/plain' is not allowed for kind 'image')",
+          "  oversize_compressed      REJECTED (400: invalid payload: compressed media is 1500466 bytes \u2014 max on-chain is 1000000 bytes; use a 'ref' payload instead)",
+          "",
+          "ALL PAYLOAD TESTS PASSED \u2014 results in /home/hatch/workspace/evochain-repo/testnet/payload_test_results.json",
+          "Prototype only: testnet, no live network, no real value."
+        ]
+      },
+      "testnet/test_certs.py": {
+        "exit": 0,
+        "tail": [
+          "PASS  node: transfer by non-owner rejected  transfer rejected: current owner is R0NI-cdbf1f779b382d0abbc338c7a4220a8192f465fb, not R0NI-1bd40916a06195e8a1c53063c940b73e5709e040 \u2014 only the owner can transfer",
+          "PASS  node: mint with forged issuer signature rejected  certificate issuer signature does not verify",
+          "PASS  node: /certs view shows transferred certificate  ",
+          "",
+          "21 passed, 0 failed \u2014 wrote /home/hatch/workspace/evochain-repo/testnet/cert_test_results.json"
+        ]
+      },
+      "testnet/test_governance.py": {
+        "exit": 0,
+        "tail": [
+          "PASS  live: vote after window closed rejected via HTTP  {'accepted': False, 'reason': 'vote outside voting window: proposal PROP-203efb7784eb5825c0093ef550ce337a1862b7a5 votes in blocks [1, 6), chain height is 6'}",
+          "PASS  live: all 3 nodes agree on the chain  heights 6/6/6",
+          "PASS  live: /tally endpoint matches /proposal tally  {'proposal_id': 'PROP-203efb7784eb5825c0093ef550ce337a1862b7a5', 'per_option': {'yes': 10000, 'no': 1000}, 'total_voting_power': 11000, 'votes_counted': 11, 'quorum': 10000, 'quorum_met': True, 'winne",
+          "",
+          "32 passed, 0 failed \u2014 wrote /home/hatch/workspace/evochain-repo/testnet/governance_test_results.json"
+        ]
+      }
+    },
+    "v2": {
+      "testnet-v2/test_payloads.py": {
+        "exit": 0,
+        "tail": [
+          "  bad_mime                 REJECTED (400: invalid payload: mime 'text/plain' is not allowed for kind 'image')",
+          "  oversize_compressed      REJECTED (400: invalid payload: compressed media is 1500466 bytes \u2014 max on-chain is 1000000 bytes; use a 'ref' payload instead)",
+          "",
+          "ALL PAYLOAD TESTS PASSED \u2014 results in /home/hatch/workspace/evochain-repo/testnet-v2/payload_test_results.json",
+          "Prototype only: testnet, no live network, no real value."
+        ]
+      },
+      "testnet-v2/test_certs.py": {
+        "exit": 0,
+        "tail": [
+          "PASS  node: transfer by non-owner rejected  transfer rejected: current owner is R0NI-6e265dcc469d8e4cd7ba606f5508e31d3e05d54d, not R0NI-04b6d5d6873425eccdd8288d5d4c5264c11ccfa6 \u2014 only the owner can transfer",
+          "PASS  node: mint with forged issuer signature rejected  certificate issuer signature does not verify",
+          "PASS  node: /certs view shows transferred certificate  ",
+          "",
+          "21 passed, 0 failed \u2014 wrote /home/hatch/workspace/evochain-repo/testnet-v2/cert_test_results.json"
+        ]
+      },
+      "testnet-v2/test_governance.py": {
+        "exit": 0,
+        "tail": [
+          "PASS  live: vote after window closed rejected via HTTP  {'accepted': False, 'reason': 'vote outside voting window: proposal PROP-ed89e7c67e4d9baa27c0151ea2837f7e23783390 votes in blocks [1, 6), chain height is 6'}",
+          "PASS  live: all 3 nodes agree on the chain  heights 6/6/6",
+          "PASS  live: /tally endpoint matches /proposal tally  {'proposal_id': 'PROP-ed89e7c67e4d9baa27c0151ea2837f7e23783390', 'per_option': {'yes': 10000, 'no': 1000}, 'total_voting_power': 11000, 'votes_counted': 11, 'quorum': 10000, 'quorum_met': True, 'winne",
+          "",
+          "32 passed, 0 failed \u2014 wrote /home/hatch/workspace/evochain-repo/testnet-v2/governance_test_results.json"
+        ]
+      },
+      "testnet-v2/test_v2.py": {
+        "exit": 0,
+        "tail": [
+          "PASS  live: every block hash is R- + 128 hex, hex part starts 0000  2 blocks, tip R-000026ab...",
+          "PASS  live: every block links via its predecessor's R- hash  genesis R-000087c1...",
+          "PASS  live: /status tip is the R- tip hash  R-000026ab1e",
+          "",
+          "20 passed, 0 failed \u2014 results in /home/hatch/workspace/evochain-repo/testnet-v2/v2_test_results.json"
+        ]
+      }
+    }
+  },
+  "meta": {
+    "status": "LOCAL ONLY \u2014 NOT committed, NOT pushed to GitHub (per Mac's change of plan, 2026-11-20).",
+    "repo_head_at_measurement": "dd18b69",
+    "date": "2026-11-20",
+    "method": "Same machine (1 Linux VM, shared CPU), matched workloads. Fresh runs re-mine a genesis in memory (run_testnet.py design); the committed genesis files were restored afterwards and are unchanged."
+  }
+}
