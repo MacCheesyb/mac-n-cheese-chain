@@ -7,28 +7,33 @@
   "topology": "full mesh, ports 8001/8002/8003, each peered to the other two",
   "genesis_test_funds_per_test_wallet": 1000000,
   "mac_address": "R0NI-ebeb98a5aeea016f49e6abf1c8b1e492317a102d",
-  "mac_address_balance": 2392,
+  "mac_address_balance": 2392000,
+  "mac_address_balance_R0NI": "2392.000",
   "mac_address_note": "inbound only \u2014 no transaction was ever signed from Mac's address; we do not have his private key. A transaction FROM Mac's address requires Mac to sign in his own wallet app.",
   "test_wallets": [
     {
       "name": "test-A",
-      "address": "R0NI-5d71191a33494939687a98f3761396c3f07da1fc",
-      "balance": 999045
+      "address": "R0NI-821945082dca78c9be63d36aa67d98ccd0052ab7",
+      "balance": 999045000,
+      "balance_R0NI": "999045.000"
     },
     {
       "name": "test-B",
-      "address": "R0NI-aa51d726d661bd0b8e752e0823471a55473ef606",
-      "balance": 999299
+      "address": "R0NI-f6f98431e3303e96ccf853abdc3c3af06a7de272",
+      "balance": 999299000,
+      "balance_R0NI": "999299.000"
     },
     {
       "name": "test-C",
-      "address": "R0NI-bac33e77e90463a2e5b6d7ed3c5206254add3669",
-      "balance": 999264
+      "address": "R0NI-c65d5992e9ab886c5184b2c2fef9f9b5c8b3b0da",
+      "balance": 999264000,
+      "balance_R0NI": "999264.000"
     },
     {
       "name": "disposable",
       "address": "R0NI-e56d2126ff80182ffd2a2f5dd7527ac9fa44dd38",
-      "balance": 0
+      "balance": 0,
+      "balance_R0NI": "0.000"
     }
   ],
   "disposable_wallet": {
@@ -102,14 +107,14 @@
   "transactions_submitted_burst": 30,
   "transactions_confirmed_total": 58,
   "transactions_rejected_security_tests": 5,
-  "mean_submit_latency_ms_phase1": 19.0,
-  "mean_submit_latency_ms_burst": 9.3,
-  "burst_tps_confirmed": 3.32,
-  "burst_submit_seconds": 0.28,
-  "burst_confirm_seconds": 9.04,
+  "mean_submit_latency_ms_phase1": 5.1,
+  "mean_submit_latency_ms_burst": 9.6,
+  "burst_tps_confirmed": 2.37,
+  "burst_submit_seconds": 0.29,
+  "burst_confirm_seconds": 12.68,
   "blocks": 9,
-  "mean_block_time_seconds": 5.12,
-  "median_block_time_seconds": 6,
+  "mean_block_time_seconds": 6.62,
+  "median_block_time_seconds": 7,
   "node_restart_sync_seconds": 0.3,
   "nodes_agree_on_chain": true,
   "security_tests": {
@@ -126,7 +131,7 @@
       "status": 400,
       "reason": {
         "accepted": false,
-        "reason": "insufficient balance (incl. pending spends)"
+        "reason": "insufficient balance (incl. pending spends): 999299.000 R0NI available, 1000799.000 R0NI requested"
       }
     },
     "forged_signature": {

@@ -35,6 +35,7 @@ REPO = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO))
 from roni_wallet import (  # noqa: E402
     evo_hash_11, make_media_payload, make_ref_payload, make_text_payload,
+    parse_amount, format_amount, MAX_SUPPLY_MILLI,
     r0ni_address, testnet_tx_id, testnet_tx_message, extract_payload_bytes,
 )
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey  # noqa: E402
@@ -116,7 +117,11 @@ def sign_tx(wallet, recipient, amount, nonce, data=None):
 
     Uses the shared helpers in roni_wallet so the signed message and
     txid always match what the node verifies: a v2 transaction is
-    signed over sender|recipient|amount|nonce|<payload sha256>."""
+    signed over sender|recipient|amount|nonce|<payload sha256>.
+    `amount` is a human amount (parse_amount): an int is whole
+    R0NI, a decimal string may carry up to 3 places; the tx
+    "amount" is integer milli-R0NI."""
+    amount = parse_amount(amount)
     msg = testnet_tx_message(wallet["address"], recipient, amount, nonce, data)
     sig = wallet["priv"].sign(msg.encode()).hex()
     tx = {"sender": wallet["address"], "recipient": recipient, "amount": amount,
@@ -134,11 +139,16 @@ GENESIS_DATA = ("R0NI testnet v2 genesis — R- block hashes — "
 def mine_genesis(allocations):
     """Mine the v2 genesis block: hash is "R-" + 128 hex chars of
     EvoHash-11, hex part starting with "0000". The "data" string is
-    part of the header, so it is covered by the hash."""
-    txs = [{"type": "genesis", "recipient": a, "amount": amt} for a, amt in allocations.items()]
+    part of the header, so it is covered by the hash. `allocations`
+    maps address -> whole R0NI; the genesis txs carry integer
+    milli-R0NI and the block is marked "amount_unit": "milli-R0NI"."""
+    txs = [{"type": "genesis", "recipient": a, "amount": parse_amount(amt)}
+           for a, amt in allocations.items()]
+    if sum(t["amount"] for t in txs) > MAX_SUPPLY_MILLI:
+        raise ValueError("testnet genesis allocations exceed the 10B R0NI max-supply ceiling")
     block = {"index": 0, "timestamp": int(time.time()),
              "previous_hash": "R-" + "0" * 128, "data": GENESIS_DATA,
-             "transactions": txs, "nonce": 0}
+             "transactions": txs, "nonce": 0, "amount_unit": "milli-R0NI"}
     header = lambda b: "|".join([str(b["index"]), str(b["timestamp"]), b["previous_hash"],
                                  json.dumps(b["transactions"], sort_keys=True), str(b["nonce"]),
                                  b["data"]])
@@ -444,14 +454,15 @@ def main():
         print("double-spend (same nonce):", sec["double_spend_same_nonce"])
         # also: second tx with next nonce spending more than remaining balance
         bal = http("GET", 8021, f"/balance?address={w['address']}")[1]["balance"]
-        tx_c = sign_tx(w, wallets[0]["address"], bal + 1_000_000, nonces[w["address"]])
+        # bal is milli-R0NI from /balance; overspend by 1,000 whole R0NI.
+        tx_c = sign_tx(w, wallets[0]["address"], (bal // 1000) + 1000, nonces[w["address"]])
         s, r = http("POST", 8021, "/tx", tx_c)
         sec["overspend"] = {"accepted": s == 200, "status": s, "reason": r}
         print("overspend:", sec["overspend"])
         # (b) forged signature: sign with a different key, claim sender is w
         forger = make_wallet("forger")
-        msg = f"{w['address']}|{wallets[0]['address']}|100|{nonces[w['address']]}"
-        forged = {"sender": w["address"], "recipient": wallets[0]["address"], "amount": 100,
+        msg = f"{w['address']}|{wallets[0]['address']}|100000|{nonces[w['address']]}"
+        forged = {"sender": w["address"], "recipient": wallets[0]["address"], "amount": 100000,
                   "nonce": nonces[w["address"]],
                   "signature": forger["priv"].sign(msg.encode()).hex(),
                   "sender_pubkey_hex": w["pub_hex"]}
@@ -512,10 +523,13 @@ def main():
             "topology": "full mesh, ports 8021/8022/8023, each peered to the other two",
             "genesis_test_funds_per_test_wallet": TEST_FUNDS,
             "mac_address": MAC_ADDR,
-            "mac_address_balance": balances[MAC_ADDR],
+            "mac_address_balance": balances[MAC_ADDR],  # milli-R0NI
+            "mac_address_balance_R0NI": format_amount(balances[MAC_ADDR]),
             "mac_address_note": "inbound only — no transaction was ever signed from Mac's address; we do not have his private key. A transaction FROM Mac's address requires Mac to sign in his own wallet app.",
             "test_wallets": [{"name": w["name"], "address": w["address"],
-                              "balance": balances[w["address"]]} for w in wallets],
+                              "balance": balances[w["address"]],  # milli-R0NI
+                              "balance_R0NI": format_amount(balances[w["address"]])}
+                             for w in wallets],
             "disposable_wallet": {
                 "address": disposable["address"] if disposable else None,
                 "public_key_hex": disposable["pub_hex"] if disposable else None,
@@ -577,10 +591,10 @@ No real value, not audited.
 - All 3 nodes agree on the same chain: {chain == chain2 == chain3}
 
 ## Balances after the run
-- Mac's address `{MAC_ADDR}`: **{balances[MAC_ADDR]} R0NI** (inbound only — nothing was ever signed from it; we do not have his private key)
+- Mac's address `{MAC_ADDR}`: **{format_amount(balances[MAC_ADDR])} R0NI** (inbound only — nothing was ever signed from it; we do not have his private key)
 """
         for w in wallets:
-            md += f"- {w['name']} `{w['address']}`: {balances[w['address']]} R0NI\n"
+            md += f"- {w['name']} `{w['address']}`: {format_amount(balances[w['address']])} R0NI\n"
         md += f"""
 ## Message / media payloads (transaction format v2)
 - Limits: text 1,000 chars (uncompressed); media 5 MB raw / 1 MB compressed on-chain (zlib level 9); anything bigger is rejected — use kind "ref" (SHA-256 + URI on-chain, media off-chain)

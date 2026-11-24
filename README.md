@@ -20,8 +20,8 @@ it would change the block hash, so Block 0 was NOT re-mined.
 - `roni_wallet.py` — R0NI Wallet v0.2 (CLI, Ed25519, EvoHash-11 addresses, local ledger)
 - `genesis_allocation.json` — local ledger: genesis supply, allocations, signed transfers
 - `wallet-app.html` — **downloadable wallet app** (single file, works offline): create wallet, send / receive, paper wallet with QR codes, export / import
-- `extension/` — R0NI Wallet browser extension v0.3 (Manifest V3)
-- `EVOCHAIN-WHITE-PAPER-DRAFT.md` — white paper draft (see PDF, Draft v0.4)
+- `extension/` — R0NI Wallet browser extension v0.4 (Manifest V3)
+- `EVOCHAIN-WHITE-PAPER-DRAFT.md` — white paper draft (PDF is Draft v0.7, with testnet v2; the `.md` file itself is still v0.2)
 - `logo-options/roni-logo-r0ni.webp` — R0NI logo (slashed zero)
 
 ## Genesis Block 0 — verified (restarted 2026-11-19, supersedes earlier Block 0s)
@@ -45,9 +45,10 @@ Superseded blocks, kept for audit only — not live:
 
 ## Wallet — how to get on board
 
-There is no network / node yet, so wallets and balances live locally
-for now. Pick one of these — they all use the same local ledger format
-(`genesis_allocation.json`):
+There is no live network yet — testnets v1 and v2 run simulated
+(3 nodes as separate processes on one VM) — so wallets and balances
+live locally for now. Pick one of these — they all use the same local
+ledger format (`genesis_allocation.json`):
 
 1. **Wallet app (easiest):** download `wallet-app.html` from this repo
    and open it in any modern browser — it works offline, straight from
@@ -140,6 +141,37 @@ certifying real-world assets and documents.
   certificates all rejected — on the CLI, in a local
   registry, and on a live testnet node.
 
+### Testnet v2 + governance (2026-11-20)
+
+- **Testnet v2 (`testnet-v2/`):** same code as v1, only the block-hash
+  format changed — every hash is `R-` + 128 hex chars of EvoHash-11
+  (difficulty `0000` on the hex part after `R-`). Live run: 12 blocks,
+  62 transactions, all 3 nodes agree, all 5 security attacks rejected,
+  governance 32/32, certs 21/21. v1 (`testnet/`, plain hex hashes) is
+  untouched. Both testnets are simulated on one VM, not a live network.
+- **v1 vs v2 comparison (`testnet-v2/COMPARISON.md`):** the R- prefix
+  costs nothing measurable — EvoHash-11 identical at 13.80 µs/hash,
+  security identical plus 3 extra prefix rejections in v2, block time
+  about 3.7 s on both.
+- **Governance (`GOVERNANCE.md`, v0.4):** 1 milli-R0NI = 1 vote-unit
+  (1 R0NI = 1000 vote-units, so a 0.001 R0NI holding still votes),
+  balance snapshot at filing, one signed vote per address, quorum
+  10,000 R0NI = 10,000,000 milli-units, pass needs quorum + strict
+  majority. No vote changing, delegation, or on-chain execution in
+  v1. First real proposal (max supply 1B / 10B / 100B): Mac chose
+  **10B on 2026-11-23 — ready to file**, smallest unit 0.001 R0NI.
+  The ceiling is a recorded decision until the proposal is filed
+  and passes; it is not on-chain today.
+- **Divisibility (2026-11-23):** amounts are stored as integer
+  milli-R0NI (1 R0NI = 1000 milli, smallest unit 0.001 R0NI).
+  Transfers, balances, votes and payloads accept fractional
+  amounts down to 0.001 and reject anything smaller or with more
+  than 3 decimal places. Legacy whole-R0NI ledgers / testnet
+  genesis blocks migrate x1000 on load. Tested in
+  `testnet/test_fractional.py` (44 checks, mirrored in
+  `testnet-v2/`): 0.001 and 1.5 transfers, exact milli-unit sums,
+  genesis 100,000 still exact.
+
 ### Genesis allocation — empty until Mac creates his wallet
 
 `genesis_allocation.json` in this repo has `"allocations": []` on
@@ -169,11 +201,17 @@ wallet is stored on the device being migrated.
   network, or phones would be outrun.
 - **Circulating supply to start:** 100,000 R0NI, set by Mac 2026-11-19.
   Recorded in the hashed genesis data, so this is the live Block 0.
-- **Max supply — proposal only, not final:** 10,000,000,000 R0NI (10B).
-  Proposed so more people can acquire R0NI and use it, driving utility
-  and demand. Not hashed into Block 0, so it can change without
-  re-mining. Alternatives: 1B / 10B / 100B — Mac to confirm.
-  100,000 to start is 0.001% of the 10B proposal.
+- **Max supply — CHOSEN 2026-11-23, not yet on-chain:** 10,000,000,000
+  R0NI (10B). Mac chose 10B on 2026-11-23; the first governance
+  proposal ("Choose max supply", 1B / 10B / 100B) is drafted and
+  ready to file, and the ceiling becomes final only when that
+  proposal is filed and passes — a passed proposal is a recorded
+  decision Mac then applies by a code change and a new release.
+  Not hashed into Block 0, so it can change without re-mining.
+  100,000 to start is 0.001% of the 10B ceiling.
+- **Smallest denomination — chosen 2026-11-23:** 0.001 R0NI
+  (1 milli-R0NI; 1 R0NI = 1000 milli-units). Amounts are stored
+  as integer milli-R0NI; see "Divisibility" above.
 - **Backing — roadmap only:** Mac wants real-world physical + digital
   assets to back value where possible. That needs custodians, audits,
   and legal structure — none exist yet. Do NOT claim R0NI is backed.
@@ -220,7 +258,9 @@ Do not treat this as open-source permission until he chooses one.
 
 ## Next decisions for Mac
 
-- Max supply: confirm 10B, or pick 1B / 100B?
+- Max supply: file the "Choose max supply" proposal (10B chosen
+  2026-11-23) and vote — filing is a signed transaction Mac makes
+  himself from his wallet; the ceiling is final only after it passes.
 - Purpose: learning/demo, payments, data, or something else?
 - Block reward / emission: how is R0NI issued after Block 0?
 - Consensus: stay proof-of-work, add difficulty adjustment, block time target?

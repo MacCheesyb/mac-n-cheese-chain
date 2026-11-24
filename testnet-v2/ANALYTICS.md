@@ -7,22 +7,22 @@ No real value, not audited.
 
 ## Results
 - Nodes: 3 (full mesh), miner: node 1 only
-- Blocks: 12 (genesis + 11 mined), difficulty `0000` on the hex part after `R-`, EvoHash-11
-- Block hash format: `R-` + 128 hex chars (e.g. genesis `R-0000f26803…`); plain hex hashes are rejected
-- Governance: proposal `PROP-d2fd5809ea0f8d9d6d4c334c9b9145d9c2e39e11` — tally {'yes': 1998740, 'no': 999060}, quorum 10000 met, winner `yes`, status **open**
+- Blocks: 11 (genesis + 10 mined), difficulty `0000` on the hex part after `R-`, EvoHash-11
+- Block hash format: `R-` + 128 hex chars (e.g. genesis `R-00003aad68…`); plain hex hashes are rejected
+- Governance: proposal `PROP-69714177ddf26b69633ad9679f3d246cdf1f4fe0` — tally {'yes': 1998740000, 'no': 999060000}, quorum 10000000 met, winner `yes`, status **open**
 - Transactions confirmed: 62 (20 phase 1 + 6 media payload + 1 gov-propose + 3 gov-votes + 30 burst + 1 restart + 1 double-spend-test tx)
-- Burst TPS: **1.84 tx/s** (30 txs, 16.28s to confirm)
-- Mean submit latency: phase 1 9.7 ms, burst 8.9 ms
-- Mean block time: 4.09s, median: 3s
-- Node restart sync: 0.30s to catch up to height 11
+- Burst TPS: **1.07 tx/s** (30 txs, 28.14s to confirm)
+- Mean submit latency: phase 1 8.5 ms, burst 9.7 ms
+- Mean block time: 6.80s, median: 6s
+- Node restart sync: 0.30s to catch up to height 10
 - All 3 nodes agree on the same chain: True
 
 ## Balances after the run
-- Mac's address `R0NI-ebeb98a5aeea016f49e6abf1c8b1e492317a102d`: **2392 R0NI** (inbound only — nothing was ever signed from it; we do not have his private key)
-- test-A `R0NI-6bb7791a5aea99a56f0a7c7e673bacefe29d894d`: 999045 R0NI
-- test-B `R0NI-c0712536fb21d42ed9f85e4d2d56f114b4822e1c`: 999299 R0NI
-- test-C `R0NI-0ecfe36a0194df7a02bb4c47b317701300811c26`: 999264 R0NI
-- disposable `R0NI-e56d2126ff80182ffd2a2f5dd7527ac9fa44dd38`: 0 R0NI
+- Mac's address `R0NI-ebeb98a5aeea016f49e6abf1c8b1e492317a102d`: **2392.000 R0NI** (inbound only — nothing was ever signed from it; we do not have his private key)
+- test-A `R0NI-e058c281c32ec1dda9e232181582b58d89e9baf2`: 999045.000 R0NI
+- test-B `R0NI-f57cdf44ea160cf7dd1eead5aa13891b24657394`: 999299.000 R0NI
+- test-C `R0NI-1fa2d3005aadad4f37efbbb9447bb69ba16be872`: 999264.000 R0NI
+- disposable `R0NI-e56d2126ff80182ffd2a2f5dd7527ac9fa44dd38`: 0.000 R0NI
 
 ## Message / media payloads (transaction format v2)
 - Limits: text 1,000 chars (uncompressed); media 5 MB raw / 1 MB compressed on-chain (zlib level 9); anything bigger is rejected — use kind "ref" (SHA-256 + URI on-chain, media off-chain)
@@ -36,7 +36,7 @@ No real value, not audited.
 
 ## Security tests (all must be rejected)
 - double_spend_same_nonce: REJECTED (400: {'accepted': False, 'reason': 'bad nonce: expected 19, got 18'})
-- overspend: REJECTED (400: {'accepted': False, 'reason': 'insufficient balance (incl. pending spends)'})
+- overspend: REJECTED (400: {'accepted': False, 'reason': 'insufficient balance (incl. pending spends): 999299.000 R0NI available, 1000799.000 R0NI requested'})
 - forged_signature: REJECTED (400: {'accepted': False, 'reason': 'signature verification failed: '})
 - tampered_amount: REJECTED (400: {'accepted': False, 'reason': 'txid mismatch'})
 - tampered_block: REJECTED (400: {'accepted': False, 'reason': 'block hash does not match recomputed EvoHash-11'})

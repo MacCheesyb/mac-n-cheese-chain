@@ -6,22 +6,22 @@
     {
       "name": "R- format: genesis hash is 'R-' + 128 hex chars",
       "passed": true,
-      "detail": "R-000093868790db25445d821973b21d45d05c1bb7341347c549a4c66f1b902f0a86f2ba7680e0237ab38fd3c8977c472f170c966d6a63b730633f86293edd8f59"
+      "detail": "R-0000f62798aa54d62ca815e3d96bc46748cc38ad55ab47c9dc92b73f57fcb6cbb10d1acde18232e1c6015f892d06354d70a9e1e777aaaad08ebd509e3840e114"
     },
     {
       "name": "R- format: is_valid_hash_format accepts the genesis hash",
       "passed": true,
-      "detail": "R-0000938687..."
+      "detail": "R-0000f62798..."
     },
     {
       "name": "difficulty: hex part after 'R-' starts with 0000",
       "passed": true,
-      "detail": "R-000093"
+      "detail": "R-0000f6"
     },
     {
       "name": "recompute: EvoHash-11 over the header (no prefix) matches hex part",
       "passed": true,
-      "detail": "recomputed 000093868790..."
+      "detail": "recomputed 0000f62798aa..."
     },
     {
       "name": "genesis: previous_hash is 'R-' + 128 zeros",
@@ -46,7 +46,7 @@
     {
       "name": "mined block carries an R- hash meeting difficulty",
       "passed": true,
-      "detail": "R-0000c86f"
+      "detail": "R-00003bef"
     },
     {
       "name": "reject: plain hex hash (no R- prefix)",
@@ -71,7 +71,7 @@
     {
       "name": "chain linking: block 2 previous_hash is block 1's R- hash",
       "passed": true,
-      "detail": "R-0000c86f"
+      "detail": "R-00003bef"
     },
     {
       "name": "reject: block whose previous_hash is plain hex, not R-",
@@ -91,17 +91,17 @@
     {
       "name": "live: every block hash is R- + 128 hex, hex part starts 0000",
       "passed": true,
-      "detail": "2 blocks, tip R-0000760b..."
+      "detail": "2 blocks, tip R-0000a9b2..."
     },
     {
       "name": "live: every block links via its predecessor's R- hash",
       "passed": true,
-      "detail": "genesis R-0000ddda..."
+      "detail": "genesis R-0000cd4f..."
     },
     {
       "name": "live: /status tip is the R- tip hash",
       "passed": true,
-      "detail": "R-0000760b08"
+      "detail": "R-0000a9b2b7"
     }
   ]
 }

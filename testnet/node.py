@@ -36,17 +36,28 @@ testnet/test_certs.py and roni_wallet.py ("Certificates").
 Governance / voting (v0.4): "gov-propose" transactions (amount 0)
 file a proposal — deterministic PROP- ID, options, voting window
 [start, end), quorum (default 10% of genesis supply = 10,000
-R0NI) — and "gov-vote" transactions (amount 0) cast one signed
-vote per address. Voting power is 1 R0NI = 1 vote, taken from the
-voter's balance at the proposal's SNAPSHOT (the balances as of
-the block the proposal was filed in), so buying after a proposal
-starts does not inflate power. The node rejects votes on unknown
+R0NI = 10,000,000 milli-units) — and "gov-vote" transactions
+(amount 0) cast one signed vote per address. Voting power is
+1 milli-R0NI = 1 vote-unit, taken from the voter's balance at
+the proposal's SNAPSHOT (the balances as of the block the
+proposal was filed in), so buying after a proposal starts does
+not inflate power. The node rejects votes on unknown
 or out-of-window proposals, duplicate votes, votes from
 zero-balance-at-snapshot addresses, and any vote whose signature
 does not verify. A proposal passes only if total votes >= quorum
 AND the winning option has a strict majority — and the winner is
 not the rejection option "no". See testnet/test_governance.py
 and roni_wallet.py ("Governance") and GOVERNANCE.md.
+
+Units — divisibility (2026-11-23): amounts are integer
+milli-R0NI (1 R0NI = 1000 milli, smallest unit 0.001 R0NI).
+A transaction's "amount" is milli; a legacy testnet genesis
+block with whole-R0NI amounts and no "amount_unit" marker is
+migrated x1000 when the node loads it (the stored genesis hash
+is not recomputed — the node never re-hashes the genesis block).
+Max supply ceiling chosen by Mac 2026-11-23: 10,000,000,000 R0NI
+(recorded decision only, not on-chain); a single payment above
+that ceiling is rejected.
 
 Usage:
   python3 node.py --port 8001 --data-dir /tmp/node1 \
@@ -75,6 +86,7 @@ from roni_wallet import (  # noqa: E402
     gov_propose_message, gov_propose_tx_id, gov_vote_message,
     gov_vote_tx_id, validate_proposal, tally_proposal,
     proposal_status, GOV_ID_PREFIX, DEFAULT_QUORUM,
+    format_amount, MAX_SUPPLY_MILLI, MILLI_PER_R0NI,
 )
 
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PublicKey  # noqa: E402
@@ -85,6 +97,28 @@ MAX_TX_PER_BLOCK = 10
 # compressed, so a block can never exceed ~10 MB of payload plus
 # overhead. Anything bigger is rejected — see validate_block().
 MAX_BLOCK_BYTES = 11_000_000
+
+
+def _migrate_legacy_genesis_amounts(chain):
+    """Migrate a legacy genesis block (whole-R0NI amounts, no
+    "amount_unit" marker) to milli-R0NI in memory: genesis tx
+    amounts x1000, then mark the block "milli-R0NI" so a second
+    load does not multiply again. The stored block hash is NOT
+    recomputed — it was mined over the original transactions, and
+    the node never re-hashes the genesis block (later blocks only
+    link to its stored hash string)."""
+    if not chain:
+        return chain
+    genesis = chain[0]
+    if genesis.get("amount_unit") == "milli-R0NI":
+        return chain
+    txs = genesis.get("transactions") or []
+    if any(t.get("type") == "genesis" for t in txs):
+        for t in txs:
+            if t.get("type") == "genesis":
+                t["amount"] = int(t["amount"]) * MILLI_PER_R0NI
+        genesis["amount_unit"] = "milli-R0NI"
+    return chain
 
 
 def block_hash(block):
@@ -223,8 +257,9 @@ def verify_tx(tx):
     try:
         if set(tx) < {"sender", "recipient", "amount", "nonce", "signature", "sender_pubkey_hex"}:
             return False, "missing fields"
-        if not isinstance(tx["amount"], int) or tx["amount"] < 0:
-            return False, "amount must be a non-negative integer"
+        if (not isinstance(tx["amount"], int) or isinstance(tx["amount"], bool)
+                or tx["amount"] < 0):
+            return False, "amount must be a non-negative integer (milli-R0NI)"
         if tx.get("type") in ("cert-mint", "cert-transfer"):
             if tx["amount"] != 0:
                 return False, "certificate transactions move 0 R0NI"
@@ -232,7 +267,9 @@ def verify_tx(tx):
             if tx["amount"] != 0:
                 return False, "governance transactions move 0 R0NI"
         elif tx["amount"] <= 0:
-            return False, "amount must be a positive integer"
+            return False, "amount must be a positive integer (milli-R0NI; smallest unit 1 milli = 0.001 R0NI)"
+        elif tx["amount"] > MAX_SUPPLY_MILLI:
+            return False, "amount exceeds the chosen max supply ceiling of 10,000,000,000 R0NI"
         if r0ni_address(bytes.fromhex(tx["sender_pubkey_hex"])) != tx["sender"]:
             return False, "address does not match sender public key"
         if tx.get("type") in ("cert-mint", "cert-transfer"):
@@ -272,7 +309,11 @@ class Node:
         elif genesis_path:
             genesis = json.loads(Path(genesis_path).read_text())
             self.chain = [genesis]
-            self.save()
+        # Legacy whole-R0NI genesis amounts migrate x1000 on load
+        # (idempotent via the "amount_unit" marker); the migrated
+        # chain is what gets saved.
+        self.chain = _migrate_legacy_genesis_amounts(self.chain)
+        self.save()
         self.stop = False
 
     def save(self):
@@ -280,6 +321,8 @@ class Node:
         self.mempool_file.write_text(json.dumps(list(self.mempool.values()), indent=2))
 
     # ---- balances / validation -------------------------------------
+    # Balances are integer milli-R0NI (see "Units" in the module
+    # docstring). Genesis amounts are migrated x1000 on load.
     def balances(self):
         bal = {}
         for block in self.chain:
@@ -461,7 +504,9 @@ class Node:
         if tx["nonce"] != self.sender_nonce(tx["sender"]):
             return False, f"bad nonce: expected {self.sender_nonce(tx['sender'])}, got {tx['nonce']}"
         if self.balance(tx["sender"]) - self.pending_spend(tx["sender"]) < tx["amount"]:
-            return False, "insufficient balance (incl. pending spends)"
+            return False, (f"insufficient balance (incl. pending spends): "
+                           f"{format_amount(self.balance(tx['sender']) - self.pending_spend(tx['sender']))} "
+                           f"R0NI available, {format_amount(tx['amount'])} R0NI requested")
         return True, "ok"
 
     def add_tx(self, tx):
@@ -706,7 +751,9 @@ def make_handler(node):
             elif self.path.startswith("/balance"):
                 from urllib.parse import urlparse, parse_qs
                 addr = parse_qs(urlparse(self.path).query).get("address", [""])[0]
-                self.send_json({"address": addr, "balance": node.balance(addr)})
+                bal = node.balance(addr)
+                self.send_json({"address": addr, "balance": bal,
+                                "balance_R0NI": format_amount(bal)})
             elif self.path == "/certs":
                 self.send_json(node.certificates())
             elif self.path.startswith("/cert"):

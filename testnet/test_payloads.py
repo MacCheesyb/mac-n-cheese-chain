@@ -64,7 +64,11 @@ def http(method, port, path, payload=None, timeout=10):
 
 
 def sign_raw(wallet, recipient, amount, nonce, data):
-    """Sign a transaction with a raw keypair (test helper)."""
+    """Sign a transaction with a raw keypair (test helper).
+    `amount` is a human amount (parse_amount): an int is whole
+    R0NI; the tx "amount" is integer milli-R0NI."""
+    from roni_wallet import parse_amount
+    amount = parse_amount(amount)
     msg = testnet_tx_message(wallet["address"], recipient, amount, nonce, data)
     tx = {"sender": wallet["address"], "recipient": recipient, "amount": amount,
           "nonce": nonce,

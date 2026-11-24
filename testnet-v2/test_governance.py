@@ -3,9 +3,10 @@
 Test the R0NI governance / voting system (v0.4).
 
 Token-weighted voting ("capital democracy", Mac's design):
-1 R0NI held = 1 vote, power taken from the voter's balance at the
-proposal's snapshot block, one signed vote per address, quorum
-(default 10% of genesis supply = 10,000 R0NI) + strict majority
+1 milli-R0NI held = 1 vote-unit (1 R0NI = 1000 vote-units), power
+taken from the voter's balance at the proposal's snapshot block,
+one signed vote per address, quorum (default 10% of genesis supply
+= 10,000 R0NI = 10,000,000 milli-units) + strict majority
 to pass — and a majority for the rejection option "no" means the
 proposal FAILS.
 
@@ -90,7 +91,7 @@ def main():
         check("proposal creation + deterministic ID",
               prop1["proposal_id"] == prop1_dup["proposal_id"]
               and prop1["proposal_id"].startswith("PROP-")
-              and prop1["quorum"] == 10000, prop1["proposal_id"])
+              and prop1["quorum"] == 10_000_000, prop1["proposal_id"])
 
         # --- offline: single node ----------------------------------
         allocations = {whale["address"]: 10000}
@@ -113,8 +114,8 @@ def main():
         entry = node.proposal(pid1)
         check("snapshot: whale 10,000 / small 100 / broke 0 at proposal block",
               entry is not None
-              and entry["snapshot_balances"].get(whale["address"]) == 10000
-              and entry["snapshot_balances"].get(smalls[0]["address"]) == 100
+              and entry["snapshot_balances"].get(whale["address"]) == 10_000_000
+              and entry["snapshot_balances"].get(smalls[0]["address"]) == 100_000
               and entry["snapshot_balances"].get(broke["address"], 0) == 0
               and entry["snapshot_block"] == 1, f"snapshot_block={entry['snapshot_block']}")
 
@@ -125,9 +126,9 @@ def main():
         mine_all(node)
         entry = node.proposal(pid1)
         check("snapshot power: transfer after proposal does not change snapshot",
-              entry["snapshot_balances"].get(whale["address"]) == 10000
+              entry["snapshot_balances"].get(whale["address"]) == 10_000_000
               and entry["snapshot_balances"].get(broke["address"], 0) == 0
-              and node.balance(broke["address"]) == 5000,
+              and node.balance(broke["address"]) == 5_000_000,
               f"current broke balance now {node.balance(broke['address'])}, snapshot still 0")
 
         # Whale votes yes (nonce 2), smalls vote no (nonce 0 each).
@@ -178,8 +179,8 @@ def main():
         # Weighted tally: whale 10,000 yes beats ten 100s no.
         tally1 = node.proposal_tally(pid1)
         check("weighted tally: whale 10,000 yes beats ten 100s no",
-              tally1["per_option"] == {"yes": 10000, "no": 1000}
-              and tally1["total_voting_power"] == 11000
+              tally1["per_option"] == {"yes": 10_000_000, "no": 1_000_000}
+              and tally1["total_voting_power"] == 11_000_000
               and tally1["quorum_met"] and tally1["winner"] == "yes",
               f"yes={tally1['per_option']['yes']} no={tally1['per_option']['no']} "
               f"total={tally1['total_voting_power']}")
@@ -228,7 +229,7 @@ def main():
         mine_all(node)
         tally3 = node.proposal_tally(pid3)
         check("quorum not met -> failed (1,000 < 10,000)",
-              tally3["total_voting_power"] == 1000 and not tally3["quorum_met"]
+              tally3["total_voting_power"] == 1_000_000 and not tally3["quorum_met"]
               and tally3["status"] == "failed",
               f"total={tally3['total_voting_power']} status={tally3['status']}")
         RESULTS["offline_tally_proposal_3_quorum_fail"] = {
@@ -351,8 +352,8 @@ def main():
             s, prop = http("GET", 8031, f"/proposal?proposal_id={live_pid}")
             tally_live = prop.get("tally", {}) if s == 200 else {}
             check("live: /proposal tally — whale 10,000 yes beats ten 100s no, passed",
-                  s == 200 and tally_live.get("per_option") == {"yes": 10000, "no": 1000}
-                  and tally_live.get("total_voting_power") == 11000
+                  s == 200 and tally_live.get("per_option") == {"yes": 10_000_000, "no": 1_000_000}
+                  and tally_live.get("total_voting_power") == 11_000_000
                   and tally_live.get("quorum_met") and prop.get("status") == "passed",
                   f"tally={tally_live} status={prop.get('status')}")
             RESULTS["live_tally"] = {k: v for k, v in tally_live.items() if k != "votes"}
@@ -370,7 +371,7 @@ def main():
                   f"heights {len(c1)}/{len(c2)}/{len(c3)}")
             s, tally_ep = http("GET", 8031, f"/tally?proposal_id={live_pid}")
             check("live: /tally endpoint matches /proposal tally",
-                  s == 200 and tally_ep.get("total_voting_power") == 11000
+                  s == 200 and tally_ep.get("total_voting_power") == 11_000_000
                   and tally_ep.get("result") == "passed", str(tally_ep)[:200])
         finally:
             for p in procs:

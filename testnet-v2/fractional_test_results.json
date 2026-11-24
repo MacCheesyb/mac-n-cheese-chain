@@ -1,0 +1,237 @@
+{
+  "tests": [
+    {
+      "name": "parse_amount: decimals + legacy whole ints -> milli",
+      "passed": true,
+      "detail": "9 cases, e.g. '0.001'->1, '1.5'->1500, 25000->25,000,000"
+    },
+    {
+      "name": "parse_amount rejects '0.0005'",
+      "passed": true,
+      "detail": "amount '0.0005' has more than 3 decimal places \u2014 the smallest unit is 0.001 R0NI (1 milli-R0NI)"
+    },
+    {
+      "name": "parse_amount rejects '0.0001'",
+      "passed": true,
+      "detail": "amount '0.0001' has more than 3 decimal places \u2014 the smallest unit is 0.001 R0NI (1 milli-R0NI)"
+    },
+    {
+      "name": "parse_amount rejects '1.0005'",
+      "passed": true,
+      "detail": "amount '1.0005' has more than 3 decimal places \u2014 the smallest unit is 0.001 R0NI (1 milli-R0NI)"
+    },
+    {
+      "name": "parse_amount rejects '0'",
+      "passed": true,
+      "detail": "amount must be positive (in R0NI, or 0 for a record-only tx)"
+    },
+    {
+      "name": "parse_amount rejects '-1'",
+      "passed": true,
+      "detail": "amount must be positive (in R0NI, or 0 for a record-only tx)"
+    },
+    {
+      "name": "parse_amount rejects ''",
+      "passed": true,
+      "detail": "amount must not be empty"
+    },
+    {
+      "name": "parse_amount rejects 'abc'",
+      "passed": true,
+      "detail": "amount 'abc' is not a number of R0NI"
+    },
+    {
+      "name": "parse_amount rejects 0.0005",
+      "passed": true,
+      "detail": "amount 0.0005 has more than 3 decimal places \u2014 the smallest unit is 0.001 R0NI (1 milli-R0NI)"
+    },
+    {
+      "name": "parse_amount rejects -0.001",
+      "passed": true,
+      "detail": "amount must be positive (in R0NI, or 0 for a record-only tx)"
+    },
+    {
+      "name": "parse_amount rejects True",
+      "passed": true,
+      "detail": "amount must not be a boolean"
+    },
+    {
+      "name": "parse_amount rejects above the 10B ceiling",
+      "passed": true,
+      "detail": "amount '10000000001' exceeds the chosen max supply ceiling of 10,000,000,000 R0NI"
+    },
+    {
+      "name": "format_amount: milli -> decimal R0NI, exactly 3 places",
+      "passed": true,
+      "detail": "1->0.001, 1500->1.500, 100,000,000->100000.000"
+    },
+    {
+      "name": "parse/format roundtrip is exact",
+      "passed": true,
+      "detail": "7 milli values survive format -> parse unchanged"
+    },
+    {
+      "name": "genesis 100,000 R0NI still exact after divisibility",
+      "passed": true,
+      "detail": "allocated 100000.000 R0NI (100000000 milli)"
+    },
+    {
+      "name": "ledger: transfer 0.001 + 1.5 exact in milli-units",
+      "passed": true,
+      "detail": "b=1501 c=1 a=99998498 milli"
+    },
+    {
+      "name": "ledger: balances sum to exactly the genesis supply",
+      "passed": true,
+      "detail": "100,000,000 milli, no dust lost to rounding"
+    },
+    {
+      "name": "ledger: transfer 0.0005 rejected",
+      "passed": true,
+      "detail": "amount '0.0005' has more than 3 decimal places \u2014 the smallest unit is 0.001 R0NI (1 milli-R0NI)"
+    },
+    {
+      "name": "ledger: transfer 0.0001 rejected",
+      "passed": true,
+      "detail": "amount '0.0001' has more than 3 decimal places \u2014 the smallest unit is 0.001 R0NI (1 milli-R0NI)"
+    },
+    {
+      "name": "legacy ledger migrates whole R0NI x1000 on load",
+      "passed": true,
+      "detail": "100,000 -> 100,000,000 milli; 25,000 -> 25,000,000 milli"
+    },
+    {
+      "name": "legacy migration is idempotent (no double x1000)",
+      "passed": true,
+      "detail": "reload after save keeps the same balances"
+    },
+    {
+      "name": "make_testnet_tx: 0.001 R0NI -> amount 1 milli, signs + verifies",
+      "passed": true,
+      "detail": "txid df8eafc205eace66..."
+    },
+    {
+      "name": "make_testnet_tx: 1.5 R0NI -> amount 1500 milli",
+      "passed": true,
+      "detail": "amount=1500"
+    },
+    {
+      "name": "make_testnet_tx rejects 0.0001 R0NI",
+      "passed": true,
+      "detail": "amount '0.0001' has more than 3 decimal places \u2014 the smallest unit is 0.001 R0NI (1 milli-R0NI)"
+    },
+    {
+      "name": "make_testnet_tx rejects 0 R0NI",
+      "passed": true,
+      "detail": "amount must be positive (in R0NI, or 0 for a record-only tx)"
+    },
+    {
+      "name": "governance: default quorum is 10,000 R0NI = 10,000,000 milli",
+      "passed": true,
+      "detail": "DEFAULT_QUORUM = 10,000,000 milli-units"
+    },
+    {
+      "name": "governance: 0.001 R0NI holder votes with 1 milli-unit",
+      "passed": true,
+      "detail": "per_option={'yes': 1, 'no': 0}"
+    },
+    {
+      "name": "governance: fractional tally exact in milli-units",
+      "passed": true,
+      "detail": "yes 10000.001 R0NI vs no 0.500 R0NI"
+    },
+    {
+      "name": "certificates: cert-mint still moves 0 R0NI",
+      "passed": true,
+      "detail": "cert CERT-ac0da78f7..."
+    },
+    {
+      "name": "node: genesis balances are milli (10,000 / 100 R0NI)",
+      "passed": true,
+      "detail": "a=10000000 b=100000 milli"
+    },
+    {
+      "name": "node: 0.001 R0NI transfer accepted into mempool",
+      "passed": true,
+      "detail": "accepted into mempool"
+    },
+    {
+      "name": "node: 0.001 R0NI transfer mined, balances exact",
+      "passed": true,
+      "detail": "b=100001 a=9999999 milli"
+    },
+    {
+      "name": "node: 1.5 R0NI transfer mined, balances exact",
+      "passed": true,
+      "detail": "b=101,501 milli (101.501 R0NI)"
+    },
+    {
+      "name": "node: raw tx with float amount 1.5 rejected (must be int milli)",
+      "passed": true,
+      "detail": "amount must be a non-negative integer (milli-R0NI)"
+    },
+    {
+      "name": "node: payment of 0 milli rejected",
+      "passed": true,
+      "detail": "amount must be a positive integer (milli-R0NI; smallest unit 1 milli = 0.001 R0NI)"
+    },
+    {
+      "name": "node: payment above the 10B ceiling rejected",
+      "passed": true,
+      "detail": "amount exceeds the chosen max supply ceiling of 10,000,000,000 R0NI"
+    },
+    {
+      "name": "node: cert-mint (amount 0) accepted with fractional balances live",
+      "passed": true,
+      "detail": "accepted into mempool"
+    },
+    {
+      "name": "node: legacy genesis (whole R0NI) migrates x1000 on load",
+      "passed": true,
+      "detail": "a=10000000 milli after load"
+    },
+    {
+      "name": "node: reload from saved chain does not double-migrate",
+      "passed": true,
+      "detail": "same balances after restart"
+    },
+    {
+      "name": "live: single node up (port 8131)",
+      "passed": true,
+      "detail": ""
+    },
+    {
+      "name": "live: 0.001 R0NI payload tx accepted via HTTP",
+      "passed": true,
+      "detail": "{'accepted': True, 'reason': 'accepted into mempool'}"
+    },
+    {
+      "name": "live: 0.001 R0NI tx mined with amount 1 milli + payload intact",
+      "passed": true,
+      "detail": "amount on-chain=1"
+    },
+    {
+      "name": "live: /balance reports milli + formatted R0NI",
+      "passed": true,
+      "detail": "{'address': 'R0NI-453b786970f46d49c13fdf7c59d28b5bc139e802', 'balance': 1, 'balance_R0NI': '0.001'}"
+    },
+    {
+      "name": "live: raw float-amount tx rejected via HTTP",
+      "passed": true,
+      "detail": "{'accepted': False, 'reason': 'amount must be a non-negative integer (milli-R0NI)'}"
+    }
+  ],
+  "passed": 44,
+  "failed": 0,
+  "rules": {
+    "milli_per_R0NI": 1000,
+    "smallest_unit_R0NI": "0.001",
+    "max_supply_R0NI": 10000000000,
+    "max_supply_milli": 10000000000000,
+    "genesis_supply_R0NI": 100000,
+    "genesis_supply_milli": 100000000,
+    "default_quorum_R0NI": 10000,
+    "default_quorum_milli": 10000000,
+    "voting_power": "1 milli-R0NI = 1 vote-unit"
+  }
+}

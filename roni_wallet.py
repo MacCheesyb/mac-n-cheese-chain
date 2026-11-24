@@ -37,9 +37,39 @@ What it does:
     transferable only by the current owner. The asset file itself
     travels in a v2 media payload (inline or "ref").
   * Governance / voting (v0.4, see "Governance" below): token-
-    weighted proposals — 1 R0NI held = 1 vote, power taken from
-    the voter's balance at the proposal's snapshot block, one
-    signed vote per address, quorum + strict majority to pass.
+    weighted proposals — 1 milli-R0NI held = 1 vote-unit, power
+    taken from the voter's balance at the proposal's snapshot
+    block, one signed vote per address, quorum + strict majority
+    to pass. (Divisibility, 2026-11-23: see "Units" below.)
+
+Units — divisibility (2026-11-23, Mac's choice):
+  * Max supply ceiling CHOSEN by Mac 2026-11-23: 10,000,000,000
+    R0NI (10B). Recorded decision only — NOT on-chain and NOT
+    final until the governance proposal is filed and passes (see
+    GOVERNANCE.md). Genesis circulating supply is unchanged:
+    100,000 R0NI to start. Block 0 was NOT re-mined.
+  * Smallest denomination: 0.001 R0NI. Amounts are stored
+    internally as integer milli-R0NI (1 R0NI = 1000 milli-units;
+    1 milli = 0.001 R0NI). All arithmetic is exact integer
+    arithmetic on milli-units — no floats anywhere in balances.
+  * Human input (CLI, make_testnet_tx, record_transfer) is parsed
+    by parse_amount(): an int is a legacy whole-R0NI amount
+    (e.g. 25000 = 25,000 R0NI = 25,000,000 milli); a str / float /
+    Decimal may carry up to 3 decimal places (e.g. "1.5" =
+    1,500 milli, "0.001" = 1 milli). More than 3 decimal places,
+    or anything below 0.001 R0NI (e.g. 0.0005), is rejected.
+  * Legacy files (ledgers / testnet genesis blocks written before
+    this change, with whole-R0NI amounts and no "amount_unit"
+    marker) are migrated on load: every stored amount x1000, and
+    the file is marked "amount_unit": "milli-R0NI" when saved, so
+    a second load does not multiply again. The genesis_supply
+    field in a ledger file stays in whole R0NI (100000) for
+    readability; allocations and transfers are milli.
+  * Display: format_amount(milli) prints decimal R0NI with
+    exactly 3 places, e.g. 0.001, 1.500, 100000.000.
+  * Voting power is in milli-units: 1 milli = 1 vote-unit, so a
+    0.001 R0NI holding still votes (1 vote-unit). Default quorum
+    10,000 R0NI = 10,000,000 milli-units.
 
 Payloads (transaction format v2 — backward compatible):
   A transaction may carry an optional "data" field:
@@ -87,10 +117,14 @@ Ledger file format (genesis_allocation.json):
     "chain": "Mac 'N Cheese Chain",
     "ticker": "R0NI",
     "genesis_block_hash": "0000adbc...c1b0",   # Block 0, unchanged
-    "genesis_supply": 100000,
-    "allocations": [],                          # {address, amount, source}
-    "transfers": []                             # signed local transfers
+    "genesis_supply": 100000,                  # whole R0NI, display only
+    "genesis_supply_milli": 100000000,
+    "amount_unit": "milli-R0NI",               # allocations/transfers are milli
+    "allocations": [],                          # {address, amount (milli), source}
+    "transfers": []                             # signed local transfers (amount milli)
   }
+  Legacy ledgers without "amount_unit" hold whole-R0NI amounts and
+  are migrated x1000 on load (see "Units" above).
 
 Run:
   python3 roni_wallet.py
@@ -169,7 +203,13 @@ GENESIS_BLOCK_HASH = (
     "0000adbc0f16c14cc2540a4a259339fd0b02a1503bad43f0bbb484eb5007c36d68f9d"
     "825875297db1b26be6eb2a0532496c6a31317f6ce9a9fc7cf6a8591c1b0"
 )
-GENESIS_SUPPLY = 100000
+GENESIS_SUPPLY = 100000  # whole R0NI, for display / the ledger's genesis_supply field
+GENESIS_SUPPLY_MILLI = GENESIS_SUPPLY * 1000  # 100,000,000 milli-R0NI
+MILLI_PER_R0NI = 1000  # 1 R0NI = 1000 milli-units; smallest unit 1 milli = 0.001 R0NI
+# Max supply ceiling CHOSEN by Mac 2026-11-23 (10B). Recorded decision
+# only — not on-chain, not final until the proposal is filed and passes.
+MAX_SUPPLY_R0NI = 10_000_000_000
+MAX_SUPPLY_MILLI = MAX_SUPPLY_R0NI * MILLI_PER_R0NI  # 10,000,000,000,000 milli
 TICKER = "R0NI"
 
 
@@ -179,6 +219,81 @@ def r0ni_address(public_key_bytes: bytes) -> str:
 
 # Backwards-compatible alias (v0.1 name).
 roni_address = r0ni_address
+
+
+# --- amounts: integer milli-R0NI ---------------------------------------
+# Canonical stored unit is the milli-R0NI (int). Human amounts are
+# parsed once, at the boundary (CLI / make_testnet_tx /
+# record_transfer), by parse_amount() and never re-parsed inside.
+from decimal import Decimal, InvalidOperation  # noqa: E402
+
+
+def parse_amount(value) -> int:
+    """Parse a human amount into integer milli-R0NI.
+
+    Accepted forms (all mean R0NI, converted to milli):
+      * int (not bool): a LEGACY whole-R0NI amount — 1 means 1 R0NI
+        (1000 milli), 25000 means 25,000 R0NI. There is no way to
+        pass 1 milli as an int; use "0.001" for that.
+      * str / float / Decimal: decimal R0NI with at most 3 places
+        after the point — "0.001" -> 1, "1.5" -> 1500,
+        "100000" -> 100,000,000.
+    Rejects: zero or negative amounts, more than 3 decimal places
+    (e.g. "0.0005", "1.0005"), anything below 0.001 R0NI, bools,
+    non-numeric strings, NaN / infinities. Raises ValueError.
+    Floats go through Decimal(str(value)) so 0.001 is exact, not
+    the binary-float approximation of 0.001.
+    """
+    if isinstance(value, bool):
+        raise ValueError("amount must not be a boolean")
+    if isinstance(value, int):
+        if value <= 0:
+            raise ValueError("amount must be positive (in R0NI, or 0 for a record-only tx)")
+        return value * MILLI_PER_R0NI
+    if isinstance(value, float):
+        if value != value or value in (float("inf"), float("-inf")):
+            raise ValueError("amount must be a finite number of R0NI")
+        dec = Decimal(str(value))
+    elif isinstance(value, Decimal):
+        dec = value
+    elif isinstance(value, str):
+        text = value.strip()
+        if not text:
+            raise ValueError("amount must not be empty")
+        try:
+            dec = Decimal(text)
+        except InvalidOperation:
+            raise ValueError(f"amount {value!r} is not a number of R0NI") from None
+    else:
+        raise ValueError(f"amount must be an int (whole R0NI) or a decimal string/number, got {type(value).__name__}")
+    if not dec.is_finite():
+        raise ValueError("amount must be a finite number of R0NI")
+    if dec <= 0:
+        raise ValueError("amount must be positive (in R0NI, or 0 for a record-only tx)")
+    if dec != dec.quantize(Decimal("0.001")):
+        raise ValueError(
+            f"amount {value!r} has more than 3 decimal places — the smallest "
+            "unit is 0.001 R0NI (1 milli-R0NI)")
+    milli = int(dec * MILLI_PER_R0NI)
+    if milli <= 0:
+        raise ValueError("amount is below the smallest unit of 0.001 R0NI (1 milli-R0NI)")
+    if milli > MAX_SUPPLY_MILLI:
+        raise ValueError(
+            f"amount {value!r} exceeds the chosen max supply ceiling of "
+            f"{MAX_SUPPLY_R0NI:,} R0NI")
+    return milli
+
+
+def format_amount(amount_milli: int) -> str:
+    """Format an integer milli-R0NI amount as decimal R0NI with
+    exactly 3 places: 1 -> "0.001", 1500 -> "1.500",
+    100000000 -> "100000.000".
+    """
+    if not isinstance(amount_milli, int) or isinstance(amount_milli, bool):
+        raise ValueError("format_amount takes an integer milli-R0NI amount")
+    sign = "-" if amount_milli < 0 else ""
+    whole, frac = divmod(abs(amount_milli), MILLI_PER_R0NI)
+    return f"{sign}{whole}.{frac:03d}"
 
 
 try:
@@ -538,11 +653,14 @@ def testnet_tx_message(sender: str, recipient: str, amount: int, nonce: int,
                       data=None) -> str:
     """The message a testnet transaction is signed over.
 
-    v1 (no payload): sender|recipient|amount|nonce — unchanged.
+    v1 (no payload): sender|recipient|amount|nonce.
     v2 (payload):    sender|recipient|amount|nonce|<payload sha256>,
     where the payload hash is the SHA-256 of the canonical payload
     JSON. Tampering with any byte of the payload therefore breaks
-    both the signature and the txid."""
+    both the signature and the txid.
+    `amount` is integer milli-R0NI (see "Units"): a 1.5 R0NI
+    transfer signs over amount 1500, a legacy whole-R0NI transfer
+    of 100 signs over 100000."""
     base = f"{sender}|{recipient}|{amount}|{nonce}"
     if data is None:
         return base
@@ -560,9 +678,12 @@ def make_testnet_tx(wallet_path: str, password: str, recipient: str,
 
     The payload is validated before signing, so a bad payload is
     never signed. The wallet's private key is only loaded to sign;
-    it is never written into the transaction."""
-    if amount <= 0:
-        raise ValueError("amount must be a positive whole number of R0NI")
+    it is never written into the transaction.
+    `amount` is a human amount parsed by parse_amount() — an int is
+    legacy whole R0NI, a str/float/Decimal may carry up to 3 decimal
+    places (smallest unit 0.001 R0NI). The stored tx "amount" is
+    integer milli-R0NI."""
+    amount = parse_amount(amount)
     if data is not None:
         ok, reason = validate_payload(data)
         if not ok:
@@ -906,8 +1027,11 @@ def registry_owner(registry: dict, cert_id: str):
 # Governance / voting — v0.4, token-weighted ("capital democracy").
 #
 # Mac's design (2026-11-20): voting power is relative to the coins
-# held in each account — 1 R0NI held = 1 vote — so majority holders
-# have more leverage over the network's direction.
+# held in each account — 1 milli-R0NI held = 1 vote-unit (so
+# 1 R0NI = 1000 vote-units, and a 0.001 R0NI holding still votes
+# with 1 vote-unit) — so majority holders have more leverage over
+# the network's direction. Quorum is stored in milli-units too:
+# the default 10,000 R0NI quorum is 10,000,000 milli-units.
 #
 #   * A proposal is filed by a "gov-propose" transaction (amount 0).
 #     Its ID is deterministic: "PROP-" + first 40 hex of
@@ -938,7 +1062,10 @@ def registry_owner(registry: dict, cert_id: str):
 # ---------------------------------------------------------------------------
 
 GOV_ID_PREFIX = "PROP-"
-DEFAULT_QUORUM = GENESIS_SUPPLY // 10  # 10% of 100,000 = 10,000 R0NI
+# Default quorum, in milli-R0NI: 10% of the 100,000 R0NI genesis
+# supply = 10,000 R0NI = 10,000,000 milli-units.
+DEFAULT_QUORUM = GENESIS_SUPPLY_MILLI // 10
+DEFAULT_QUORUM_R0NI = GENESIS_SUPPLY // 10  # 10,000 R0NI, for display
 MAX_GOV_TITLE_CHARS = 200
 MAX_GOV_DESCRIPTION_CHARS = 2000
 MAX_GOV_OPTIONS = 8
@@ -982,9 +1109,21 @@ def make_proposal(title: str, description: str, options, creator_address: str,
     voting_end_block = int(voting_end_block)
     if voting_start_block < 0 or voting_end_block <= voting_start_block:
         raise ValueError("need 0 <= voting_start_block < voting_end_block")
-    quorum = DEFAULT_QUORUM if quorum is None else int(quorum)
+    # Quorum is stored in MILLI-units (int). Callers that take a
+    # human quorum (the CLI) convert it first with parse_amount();
+    # passing a float or a decimal string here is an error, so a
+    # whole-R0NI number can never be silently mistaken for milli.
+    if quorum is None:
+        quorum = DEFAULT_QUORUM
+    if not isinstance(quorum, int) or isinstance(quorum, bool):
+        raise ValueError("quorum must be an integer number of milli-R0NI "
+                         "(1 R0NI = 1000 milli-units; the CLI converts a "
+                         "human quorum with parse_amount())")
     if quorum <= 0:
-        raise ValueError("quorum must be a positive number of R0NI of voting power")
+        raise ValueError("quorum must be a positive number of milli-R0NI of voting power")
+    if quorum > MAX_SUPPLY_MILLI:
+        raise ValueError("quorum cannot exceed the max supply ceiling "
+                         f"({MAX_SUPPLY_R0NI:,} R0NI)")
     if snapshot_block is not None:
         snapshot_block = int(snapshot_block)
         if snapshot_block < 0:
@@ -1116,8 +1255,9 @@ def make_gov_vote_tx(wallet_path: str, password: str, proposal_id: str,
 def tally_proposal(proposal: dict, votes, snapshot_balances: dict) -> dict:
     """Tally a proposal from its votes and its snapshot balances.
 
-    Voting power is 1 R0NI = 1 vote, taken from the SNAPSHOT
-    balances — never from balances at tally time. Only the FIRST
+    Voting power is 1 milli-R0NI = 1 vote-unit, taken from the
+    SNAPSHOT balances (milli-R0NI) — never from balances at tally
+    time. Only the FIRST
     vote from each address counts (the node rejects later ones,
     but the tally is defensive too); votes for an option that is
     not on the proposal, and votes from addresses with zero
@@ -1162,10 +1302,13 @@ def tally_proposal(proposal: dict, votes, snapshot_balances: dict) -> dict:
     passed = quorum_met and majority_met and (winner is None or winner.lower() != "no")
     return {
         "proposal_id": proposal.get("proposal_id"),
-        "per_option": per_option,
-        "total_voting_power": total,
+        "per_option": per_option,  # milli-R0NI (vote-units)
+        "per_option_R0NI": {o: format_amount(p) for o, p in per_option.items()},
+        "total_voting_power": total,  # milli-R0NI
+        "total_voting_power_R0NI": format_amount(total),
         "votes_counted": counted_votes,
-        "quorum": quorum,
+        "quorum": quorum,  # milli-R0NI
+        "quorum_R0NI": format_amount(quorum),
         "quorum_met": quorum_met,
         "winner": winner if majority_met else None,
         "winning_power": winning_power,
@@ -1281,12 +1424,31 @@ def new_ledger() -> dict:
         "chain": "Mac 'N Cheese Chain",
         "ticker": TICKER,
         "genesis_block_hash": GENESIS_BLOCK_HASH,
-        "genesis_supply": GENESIS_SUPPLY,
+        "genesis_supply": GENESIS_SUPPLY,  # whole R0NI, display only
+        "genesis_supply_milli": GENESIS_SUPPLY_MILLI,
+        "amount_unit": "milli-R0NI",  # allocations/transfers are integer milli-R0NI
         "allocations": [],
         "transfers": [],
         "warning": "Prototype local ledger only — not a live chain. "
                    "Do not use for real funds.",
     }
+
+
+def _migrate_legacy_ledger_amounts(ledger: dict) -> dict:
+    """Migrate a legacy ledger (whole-R0NI amounts, no amount_unit
+    marker) to milli-R0NI in memory: every allocation and transfer
+    amount x1000. Idempotent — a ledger already marked
+    "milli-R0NI" is returned unchanged. The genesis_supply field
+    stays in whole R0NI."""
+    if ledger.get("amount_unit") == "milli-R0NI":
+        return ledger
+    for alloc in ledger.get("allocations", []):
+        alloc["amount"] = int(alloc.get("amount", 0)) * MILLI_PER_R0NI
+    for tx in ledger.get("transfers", []):
+        tx["amount"] = int(tx.get("amount", 0)) * MILLI_PER_R0NI
+    ledger["amount_unit"] = "milli-R0NI"
+    ledger["genesis_supply_milli"] = GENESIS_SUPPLY_MILLI
+    return ledger
 
 
 def load_ledger(path: str) -> dict:
@@ -1295,7 +1457,8 @@ def load_ledger(path: str) -> dict:
         raise ValueError(f"ledger ticker {ledger.get('ticker')!r} is not R0NI")
     ledger.setdefault("allocations", [])
     ledger.setdefault("transfers", [])
-    return ledger
+    # Legacy whole-R0NI ledgers migrate x1000 on load (idempotent).
+    return _migrate_legacy_ledger_amounts(ledger)
 
 
 def save_ledger(path: str, ledger: dict) -> None:
@@ -1303,6 +1466,10 @@ def save_ledger(path: str, ledger: dict) -> None:
 
 
 def ledger_balance(ledger: dict, address: str) -> int:
+    """Balance in integer milli-R0NI. Display with format_amount().
+    Ledgers read from disk go through load_ledger (which migrates
+    legacy whole-R0NI amounts x1000); a dict built by hand with
+    legacy amounts must be migrated first."""
     balance = 0
     for alloc in ledger.get("allocations", []):
         if alloc.get("address") == address:
@@ -1327,16 +1494,17 @@ def allocate_genesis(ledger_path: str, wallet_path: str) -> dict:
                          f"see {ledger['allocations']}")
     wallet = show_wallet(wallet_path)
     total = sum(int(a.get("amount", 0)) for a in ledger["allocations"])
-    if total + GENESIS_SUPPLY > GENESIS_SUPPLY:
+    if total + GENESIS_SUPPLY_MILLI > GENESIS_SUPPLY_MILLI:
         raise SystemExit("genesis supply would be exceeded")
     ledger["allocations"].append({
         "address": wallet["address"],
-        "amount": GENESIS_SUPPLY,
+        "amount": GENESIS_SUPPLY_MILLI,  # milli-R0NI: 100,000 R0NI
         "source": "genesis",
         "genesis_block_hash": GENESIS_BLOCK_HASH,
     })
     save_ledger(ledger_path, ledger)
-    return {"address": wallet["address"], "amount": GENESIS_SUPPLY}
+    return {"address": wallet["address"], "amount": GENESIS_SUPPLY_MILLI,
+            "amount_R0NI": format_amount(GENESIS_SUPPLY_MILLI)}
 
 
 def record_transfer(ledger_path: str, wallet_path: str, password: str,
@@ -1345,9 +1513,15 @@ def record_transfer(ledger_path: str, wallet_path: str, password: str,
 
     The transfer message is signed, the signature is verified against the
     sender's public key, and the sender's ledger balance is checked first.
+    `amount` is a human amount (parse_amount): an int is legacy whole
+    R0NI, a str/float/Decimal may carry up to 3 decimal places. The
+    stored transfer amount — and the signed message — carry integer
+    milli-R0NI.
     """
-    if amount <= 0:
-        raise SystemExit("amount must be a positive whole number of R0NI")
+    try:
+        amount = parse_amount(amount)
+    except ValueError as e:
+        raise SystemExit(str(e)) from None
     ledger = load_ledger(ledger_path)
     wallet, priv = _load_private(password, wallet_path)
     from_address = wallet["address"]
@@ -1355,8 +1529,8 @@ def record_transfer(ledger_path: str, wallet_path: str, password: str,
         raise SystemExit("cannot transfer to your own address")
     if ledger_balance(ledger, from_address) < amount:
         raise SystemExit(
-            f"insufficient balance: {ledger_balance(ledger, from_address)} "
-            f"R0NI available, {amount} R0NI requested")
+            f"insufficient balance: {format_amount(ledger_balance(ledger, from_address))} "
+            f"R0NI available, {format_amount(amount)} R0NI requested")
     message = f"R0NI transfer {from_address} -> {to_address} : {amount}"
     signature_hex = priv.sign(message.encode("utf-8")).hex()
     if not verify_signature(wallet["public_key_hex"], message, signature_hex):
@@ -1364,7 +1538,8 @@ def record_transfer(ledger_path: str, wallet_path: str, password: str,
     tx = {
         "from": from_address,
         "to": to_address,
-        "amount": amount,
+        "amount": amount,  # milli-R0NI
+        "amount_R0NI": format_amount(amount),
         "message": message,
         "signature_hex": signature_hex,
         "public_key_hex": wallet["public_key_hex"],
@@ -1402,13 +1577,16 @@ def self_test():
         ledger_path = f"{d}/genesis_allocation.json"
         ledger = new_ledger()
         assert ledger["allocations"] == [] and ledger["genesis_supply"] == 100000
+        assert ledger["genesis_supply_milli"] == 100_000_000
+        assert ledger["amount_unit"] == "milli-R0NI"
         assert ledger["genesis_block_hash"] == GENESIS_BLOCK_HASH
         save_ledger(ledger_path, ledger)
         assert ledger_balance(load_ledger(ledger_path), w["address"]) == 0
         print("6. empty genesis ledger ok, balance 0")
         allocate_genesis(ledger_path, p)
-        assert ledger_balance(load_ledger(ledger_path), w["address"]) == 100000
-        print("7. genesis allocation ok, balance 100,000 R0NI")
+        assert ledger_balance(load_ledger(ledger_path), w["address"]) == 100_000_000
+        assert format_amount(ledger_balance(load_ledger(ledger_path), w["address"])) == "100000.000"
+        print("7. genesis allocation ok, balance 100,000 R0NI (100,000,000 milli)")
         try:
             allocate_genesis(ledger_path, p)
             print("8. FAIL: second genesis allocation allowed!")
@@ -1420,11 +1598,13 @@ def self_test():
         q = f"{d}/test-wallet-2.json"
         w2 = create_wallet("test-password", q)
         tx = record_transfer(ledger_path, p, "test-password", w2["address"], 25000)
+        assert tx["amount"] == 25_000_000 and tx["amount_R0NI"] == "25000.000"
         assert verify_signature(tx["public_key_hex"], tx["message"], tx["signature_hex"])
         ledger = load_ledger(ledger_path)
-        assert ledger_balance(ledger, w["address"]) == 75000
-        assert ledger_balance(ledger, w2["address"]) == 25000
-        print("9. signed transfer ok, balances 75,000 / 25,000 R0NI")
+        assert ledger_balance(ledger, w["address"]) == 75_000_000
+        assert ledger_balance(ledger, w2["address"]) == 25_000_000
+        print("9. signed transfer ok, balances 75,000 / 25,000 R0NI "
+              "(75,000,000 / 25,000,000 milli)")
         try:
             record_transfer(ledger_path, p, "test-password", w2["address"], 999999)
             print("10. FAIL: overspend allowed!")
@@ -1486,10 +1666,11 @@ def self_test():
         assert validate_payload(ref)[0]
         print("19. off-chain ref payload validates ok")
         tx2 = make_testnet_tx(p, "test-password", w2["address"], 100, 0, text)
+        assert tx2["amount"] == 100_000  # 100 R0NI = 100,000 milli
         assert tx2["data"] == text and tx2["txid"] == testnet_tx_id(
-            tx2["sender"], tx2["recipient"], 100, 0, text)
+            tx2["sender"], tx2["recipient"], 100_000, 0, text)
         assert verify_signature(tx2["sender_pubkey_hex"],
-                                testnet_tx_message(tx2["sender"], tx2["recipient"], 100, 0, text),
+                                testnet_tx_message(tx2["sender"], tx2["recipient"], 100_000, 0, text),
                                 tx2["signature"])
         tx2_tampered = dict(tx2)
         tx2_tampered["data"] = make_text_payload("tampered")
@@ -1611,15 +1792,15 @@ def self_test():
                                voting_end_block=10)
         assert prop_c["proposal_id"] != prop_a["proposal_id"]
         assert validate_proposal(prop_a)[0]
-        assert prop_a["quorum"] == 10000  # default: 10% of 100,000 genesis supply
-        print(f"30. proposal ID deterministic ({prop_a['proposal_id'][:14]}…), quorum defaults to 10,000 R0NI")
+        assert prop_a["quorum"] == 10_000_000  # default: 10% of 100,000 genesis supply, in milli
+        print(f"30. proposal ID deterministic ({prop_a['proposal_id'][:14]}…), quorum defaults to 10,000 R0NI (10,000,000 milli)")
         # Whale vs small holders: one 10,000 holder beats ten 100 holders.
         smalls = []
         for i in range(10):
             sp = f"{d}/small-{i}.json"
             smalls.append(create_wallet("test-password", sp))
-        snapshot = {w["address"]: 10000}
-        snapshot.update({s["address"]: 100 for s in smalls})
+        snapshot = {w["address"]: 10_000_000}  # 10,000 R0NI, in milli
+        snapshot.update({s["address"]: 100_000 for s in smalls})  # 100 R0NI each, in milli
         propose_tx = make_gov_propose_tx(p, "test-password", "Set max supply to 10B",
                                          "Should the max supply be 10B R0NI?",
                                          ["yes", "no"], 1, 10, 3)
@@ -1638,8 +1819,11 @@ def self_test():
                 f"{d}/small-{i}.json", "test-password",
                 propose_tx["proposal"]["proposal_id"], "no", 0))
         tally = registry_tally(gov_reg, propose_tx["proposal"]["proposal_id"], current_height=3)
-        assert tally["per_option"] == {"yes": 10000, "no": 1000}, tally
-        assert tally["total_voting_power"] == 11000 and tally["quorum_met"]
+        assert tally["per_option"] == {"yes": 10_000_000, "no": 1_000_000}, tally
+        assert tally["per_option_R0NI"] == {"yes": "10000.000", "no": "1000.000"}
+        assert tally["total_voting_power"] == 11_000_000 and tally["quorum_met"]
+        assert tally["total_voting_power_R0NI"] == "11000.000"
+        assert tally["quorum_R0NI"] == "10000.000"
         assert tally["winner"] == "yes" and tally["passed"] and tally["status"] == "open"
         print("32. whale tally: yes 10,000 vs no 1,000 (10 x 100) — whale wins, "
               "quorum 10,000 met, still open at height 3")
@@ -1687,7 +1871,7 @@ def self_test():
             registry_apply_vote(gov_reg2, make_gov_vote_tx(
                 f"{d}/small-{i}.json", "test-password", pid2, "yes", 1))
         t2 = registry_tally(gov_reg2, pid2, current_height=10)
-        assert t2["total_voting_power"] == 1000 and not t2["quorum_met"]
+        assert t2["total_voting_power"] == 1_000_000 and not t2["quorum_met"]
         assert t2["status"] == "failed"
         print("37. quorum not met (1,000 < 10,000) -> proposal fails at close")
         # Majority no: whale votes no, smalls vote yes -> no wins, fails.
@@ -1705,12 +1889,92 @@ def self_test():
         print("38. majority 'no' (10,000 vs 1,000) -> proposal fails at close")
         # Snapshot power: a voter who buys AFTER the proposal starts
         # still votes with their snapshot balance, not the new one.
-        late_snapshot = {w["address"]: 100, w2["address"]: 5000}
+        late_snapshot = {w["address"]: 100_000, w2["address"]: 5_000_000}
         late_votes = [make_gov_vote_tx(p, "test-password", pid3, "yes", 9)]
         t4 = tally_proposal(gov_reg3["proposals"][pid3]["proposal"], late_votes, late_snapshot)
-        assert t4["per_option"]["yes"] == 100  # snapshot 100, not a later 10,000
-        print("39. snapshot power: voter counts at their snapshot balance (100), "
+        assert t4["per_option"]["yes"] == 100_000  # snapshot 100 R0NI, not a later 10,000
+        print("39. snapshot power: voter counts at their snapshot balance (100 R0NI), "
               "not at a balance bought after the proposal started")
+        # Divisibility (2026-11-23): milli-R0NI amounts.
+        assert parse_amount("0.001") == 1 and parse_amount("1.5") == 1500
+        assert parse_amount("1.500") == 1500 and parse_amount(1) == 1000
+        assert parse_amount(25000) == 25_000_000 and parse_amount("100000") == 100_000_000
+        assert parse_amount(0.001) == 1 and parse_amount("0.001") == 1
+        assert format_amount(1) == "0.001" and format_amount(1500) == "1.500"
+        assert format_amount(100_000_000) == "100000.000" and format_amount(0) == "0.000"
+        print("40. parse/format: 0.001 -> 1 milli, 1.5 -> 1500 milli, "
+              "100000 R0NI -> 100,000,000 milli, formatted back exactly")
+        for bad in ("0.0005", "0.0001", "1.0005", "0", "-1", "", "abc", 0.0005, -0.001):
+            try:
+                parse_amount(bad)
+                print(f"41. FAIL: amount {bad!r} accepted!")
+                raise SystemExit(1)
+            except ValueError:
+                pass
+        print("41. sub-milli amounts correctly rejected (0.0005, 0.0001, "
+              "1.0005, 0, negative, empty, non-numeric)")
+        # Fractional ledger transfers, exact in milli-units.
+        frac_path = f"{d}/frac-ledger.json"
+        save_ledger(frac_path, new_ledger())
+        allocate_genesis(frac_path, p)
+        record_transfer(frac_path, p, "test-password", w2["address"], "0.001")
+        record_transfer(frac_path, p, "test-password", w2["address"], "1.5")
+        record_transfer(frac_path, p, "test-password", w3["address"], "0.001")
+        fledger = load_ledger(frac_path)
+        assert ledger_balance(fledger, w2["address"]) == 1501
+        assert ledger_balance(fledger, w3["address"]) == 1
+        assert ledger_balance(fledger, w["address"]) == 100_000_000 - 1502
+        assert (ledger_balance(fledger, w["address"])
+                + ledger_balance(fledger, w2["address"])
+                + ledger_balance(fledger, w3["address"])) == 100_000_000
+        print("42. fractional ledger transfers exact: 0.001 + 1.5 to w2, "
+              "0.001 to w3; balances sum to exactly 100,000,000 milli")
+        try:
+            record_transfer(frac_path, p, "test-password", w2["address"], "0.0005")
+            print("43. FAIL: 0.0005 transfer accepted!")
+            raise SystemExit(1)
+        except SystemExit as e:
+            assert "3 decimal places" in str(e) or "smallest unit" in str(e)
+            print("43. fractional transfer of 0.0005 correctly rejected")
+        # Legacy whole-R0NI ledger migrates x1000 on load, idempotently.
+        legacy_path = f"{d}/legacy-ledger.json"
+        Path(legacy_path).write_text(json.dumps({
+            "chain": "Mac 'N Cheese Chain", "ticker": "R0NI",
+            "genesis_block_hash": GENESIS_BLOCK_HASH,
+            "genesis_supply": 100000,
+            "allocations": [{"address": w["address"], "amount": 100000,
+                             "source": "genesis"}],
+            "transfers": [{"from": w["address"], "to": w2["address"],
+                           "amount": 25000, "message": "legacy",
+                           "signature_hex": "00", "public_key_hex": w["public_key_hex"]}],
+        }) + "\n", encoding="utf-8")
+        leg = load_ledger(legacy_path)
+        assert leg["amount_unit"] == "milli-R0NI"
+        assert ledger_balance(leg, w["address"]) == 75_000_000
+        assert ledger_balance(leg, w2["address"]) == 25_000_000
+        save_ledger(legacy_path, leg)
+        leg2 = load_ledger(legacy_path)
+        assert ledger_balance(leg2, w["address"]) == 75_000_000  # no double migration
+        print("44. legacy ledger (whole R0NI, no marker) migrates x1000 on "
+              "load; reload after save does not multiply again")
+        # Fractional testnet tx + a 0.001-R0NI holder still votes.
+        frac_tx = make_testnet_tx(p, "test-password", w2["address"], "0.001", 20)
+        assert frac_tx["amount"] == 1
+        assert verify_signature(frac_tx["sender_pubkey_hex"],
+                                testnet_tx_message(frac_tx["sender"], frac_tx["recipient"],
+                                                   1, 20, None),
+                                frac_tx["signature"])
+        print("45. fractional testnet tx: 0.001 R0NI signs over amount 1 milli, verifies")
+        tiny_snapshot = {w2["address"]: 1}  # 0.001 R0NI = 1 vote-unit
+        tiny_tally = tally_proposal(
+            make_proposal("Tiny vote", "Does 0.001 R0NI vote?", ["yes", "no"],
+                          w["address"], w["public_key_hex"], created_at=1795132723,
+                          voting_start_block=1, voting_end_block=10, quorum=1),
+            [{"sender": w2["address"], "option": "yes"}], tiny_snapshot)
+        assert tiny_tally["per_option"] == {"yes": 1, "no": 0}
+        assert tiny_tally["total_voting_power"] == 1 and tiny_tally["quorum_met"]
+        assert tiny_tally["passed"]
+        print("46. governance: a 0.001 R0NI holder votes with 1 milli-unit of power")
     print("ALL TESTS PASSED")
 
 
@@ -1725,6 +1989,8 @@ def _usage():
     print("  python3 roni_wallet.py allocate-genesis <ledger.json> <wallet.json>")
     print("  python3 roni_wallet.py balance <ledger.json> <address>")
     print("  python3 roni_wallet.py transfer <ledger.json> <wallet.json> <password> <to-address> <amount>")
+    print("    # <amount> is decimal R0NI, up to 3 places (smallest 0.001);")
+    print("    # a whole number is whole R0NI, e.g. 25000 = 25,000 R0NI.")
     print("  python3 roni_wallet.py payload-text <message>")
     print("  python3 roni_wallet.py payload-file <path> [--kind K] [--mime M]")
     print("  python3 roni_wallet.py payload-ref <uri> <mime> <size> <sha256> [--filename F]")
@@ -1809,17 +2075,16 @@ if __name__ == "__main__":
         print(json.dumps(allocate_genesis(args[1], args[2]), indent=2))
     elif args[0] == "balance" and len(args) == 3:
         ledger = load_ledger(args[1])
+        bal = ledger_balance(ledger, args[2])
         print(json.dumps({
             "address": args[2],
-            "balance_R0NI": ledger_balance(ledger, args[2]),
+            "balance_milli": bal,
+            "balance_R0NI": format_amount(bal),
             "genesis_supply": ledger.get("genesis_supply"),
         }, indent=2))
     elif args[0] == "transfer" and len(args) == 6:
-        try:
-            amount = int(args[5])
-        except ValueError:
-            raise SystemExit("amount must be a whole number of R0NI") from None
-        print(json.dumps(record_transfer(args[1], args[2], args[3], args[4], amount), indent=2))
+        # Amount is a human amount: "0.001", "1.5", "25000" (whole R0NI).
+        print(json.dumps(record_transfer(args[1], args[2], args[3], args[4], args[5]), indent=2))
     elif args[0] == "payload-text" and len(args) == 2:
         try:
             print(json.dumps(make_text_payload(args[1]), indent=2))
@@ -1849,14 +2114,16 @@ if __name__ == "__main__":
         raise SystemExit(0 if ok else 1)
     elif args[0] == "make-tx" and len(args) in (6, 7):
         try:
-            amount, nonce = int(args[4]), int(args[5])
+            nonce = int(args[5])
         except ValueError:
-            raise SystemExit("amount and nonce must be whole numbers") from None
+            raise SystemExit("nonce must be a whole number") from None
         data = None
         if len(args) == 7:
             data = json.loads(Path(args[6]).read_text())
         try:
-            print(json.dumps(make_testnet_tx(args[1], args[2], args[3], amount, nonce, data), indent=2))
+            # Amount is a human amount ("0.001", "1.5", "100"); the
+            # stored tx amount is integer milli-R0NI.
+            print(json.dumps(make_testnet_tx(args[1], args[2], args[3], args[4], nonce, data), indent=2))
         except (ValueError, SystemExit) as e:
             raise SystemExit(str(e)) from None
     elif args[0] == "extract" and len(args) == 3:
@@ -1933,7 +2200,9 @@ if __name__ == "__main__":
             raise SystemExit("start-block, end-block and nonce must be whole numbers") from None
         try:
             options = opts["options"].split(",") if "options" in opts else ["yes", "no"]
-            quorum = int(opts["quorum"]) if "quorum" in opts else None
+            # --quorum is a human amount (whole R0NI, or up to 3
+            # decimals); the proposal stores integer milli-R0NI.
+            quorum = parse_amount(opts["quorum"]) if "quorum" in opts else None
             snapshot_balances = None
             if "ledger" in opts:
                 ledger = load_ledger(opts["ledger"])

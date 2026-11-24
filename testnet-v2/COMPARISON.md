@@ -1,7 +1,8 @@
 # R0NI Testnet v1 vs v2 — Security, Effectiveness, and Speed Comparison
 
-**Date:** 2026-11-20 · **Status: LOCAL ONLY — not committed, not pushed to GitHub**
-(per Mac's change of plan; the parent will deliver this as a local PDF).
+**Date:** 2026-11-20 · **Status: published to GitHub 2026-11-20 (commit `2c53f7e`),
+per Mac's instruction to keep the R- hash and publish the rest. Also delivered
+as a local PDF.
 Repo HEAD at measurement: `dd18b69`. Raw numbers:
 [`comparison_results.json`](comparison_results.json).
 

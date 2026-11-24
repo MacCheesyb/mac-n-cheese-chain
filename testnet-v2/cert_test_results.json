@@ -3,17 +3,17 @@
     {
       "name": "png: mint + verify (asset SHA-256 matches)",
       "passed": true,
-      "detail": "CERT-8f608bccee31d407a1b62cd378cbae391b669f65"
+      "detail": "CERT-0b85bcf7cc50f595ba810d14a2aa834218f1197b"
     },
     {
       "name": "document: mint + verify (asset SHA-256 matches)",
       "passed": true,
-      "detail": "CERT-bf23797b47879e66ca523e418907392905236e21"
+      "detail": "CERT-e8283ff502e2e0e438d991e645b24d9d9194f097"
     },
     {
       "name": "audio: mint + verify (asset SHA-256 matches)",
       "passed": true,
-      "detail": "CERT-dab85d2882ece2158a587717fcc1f68622141bc4"
+      "detail": "CERT-db20aaa47392bd161f487d2ef1718b39eb175dd5"
     },
     {
       "name": "audio: transfer owner -> buyer recorded in registry",
@@ -38,7 +38,7 @@
     {
       "name": "reject: duplicate certificate",
       "passed": true,
-      "detail": "duplicate certificate CERT-8f608bccee31d407a1b62cd378cbae391b669f65 \u2014 this asset + issuer is already certified"
+      "detail": "duplicate certificate CERT-0b85bcf7cc50f595ba810d14a2aa834218f1197b \u2014 this asset + issuer is already certified"
     },
     {
       "name": "reject: transfer by non-owner",
@@ -93,7 +93,7 @@
     {
       "name": "node: transfer by non-owner rejected",
       "passed": true,
-      "detail": "transfer rejected: current owner is R0NI-04a824d3c1bfa4685eb1a85be2021db95d6131ba, not R0NI-e64222d7cbd1468e4e6c9bc7bde34b95cef5f744 \u2014 only the owner can transfer"
+      "detail": "transfer rejected: current owner is R0NI-637bd0e0a6c593aab467ae88aa69964aee47aed5, not R0NI-0a2d4b2bcf2bd508f91956cc417b2698f5ba64eb \u2014 only the owner can transfer"
     },
     {
       "name": "node: mint with forged issuer signature rejected",
@@ -109,8 +109,8 @@
   "passed": 21,
   "failed": 0,
   "cert_ids": {
-    "png": "CERT-8f608bccee31d407a1b62cd378cbae391b669f65",
-    "doc": "CERT-bf23797b47879e66ca523e418907392905236e21",
-    "wav": "CERT-dab85d2882ece2158a587717fcc1f68622141bc4"
+    "png": "CERT-0b85bcf7cc50f595ba810d14a2aa834218f1197b",
+    "doc": "CERT-e8283ff502e2e0e438d991e645b24d9d9194f097",
+    "wav": "CERT-db20aaa47392bd161f487d2ef1718b39eb175dd5"
   }
 }

@@ -3,19 +3,19 @@
   "hash_format": "v2 block hashes are \"R-\" + 128 hex chars of EvoHash-11; the \"R\" is a label, NOT part of the hash (hex has no R). Difficulty \"0000\" applies to the hex part immediately after \"R-\". Plain hex hashes are rejected.",
   "v2_genesis": {
     "data": "R0NI testnet v2 genesis \u2014 R- block hashes \u2014 circulating supply 100000 to start",
-    "hash": "R-0000f268031649e33f13d6868aab86cde180413818abc0c24cbcf766d156dd1f4f3c974284f9ffc0b5d43b7226304f6d21fd7fc82edd1c7f296dfe5255aecdb5",
-    "nonce": 2060,
-    "timestamp": 1795209315
+    "hash": "R-00003aad68e7fddf6b4857923d7b0e46388e4a37f8a8c5072592fd7948d3a7905383a494dd738437e283f70181296c8333ba4cb165f4afb83677ea0ae163510a",
+    "nonce": 353957,
+    "timestamp": 1795487821
   },
   "governance": {
-    "proposal_id": "PROP-d2fd5809ea0f8d9d6d4c334c9b9145d9c2e39e11",
+    "proposal_id": "PROP-69714177ddf26b69633ad9679f3d246cdf1f4fe0",
     "per_option": {
-      "yes": 1998740,
-      "no": 999060
+      "yes": 1998740000,
+      "no": 999060000
     },
-    "total_voting_power": 2997800,
+    "total_voting_power": 2997800000,
     "votes_counted": 3,
-    "quorum": 10000,
+    "quorum": 10000000,
     "quorum_met": true,
     "winner": "yes",
     "passed": true,
@@ -28,28 +28,33 @@
   "topology": "full mesh, ports 8021/8022/8023, each peered to the other two",
   "genesis_test_funds_per_test_wallet": 1000000,
   "mac_address": "R0NI-ebeb98a5aeea016f49e6abf1c8b1e492317a102d",
-  "mac_address_balance": 2392,
+  "mac_address_balance": 2392000,
+  "mac_address_balance_R0NI": "2392.000",
   "mac_address_note": "inbound only \u2014 no transaction was ever signed from Mac's address; we do not have his private key. A transaction FROM Mac's address requires Mac to sign in his own wallet app.",
   "test_wallets": [
     {
       "name": "test-A",
-      "address": "R0NI-6bb7791a5aea99a56f0a7c7e673bacefe29d894d",
-      "balance": 999045
+      "address": "R0NI-e058c281c32ec1dda9e232181582b58d89e9baf2",
+      "balance": 999045000,
+      "balance_R0NI": "999045.000"
     },
     {
       "name": "test-B",
-      "address": "R0NI-c0712536fb21d42ed9f85e4d2d56f114b4822e1c",
-      "balance": 999299
+      "address": "R0NI-f57cdf44ea160cf7dd1eead5aa13891b24657394",
+      "balance": 999299000,
+      "balance_R0NI": "999299.000"
     },
     {
       "name": "test-C",
-      "address": "R0NI-0ecfe36a0194df7a02bb4c47b317701300811c26",
-      "balance": 999264
+      "address": "R0NI-1fa2d3005aadad4f37efbbb9447bb69ba16be872",
+      "balance": 999264000,
+      "balance_R0NI": "999264.000"
     },
     {
       "name": "disposable",
       "address": "R0NI-e56d2126ff80182ffd2a2f5dd7527ac9fa44dd38",
-      "balance": 0
+      "balance": 0,
+      "balance_R0NI": "0.000"
     }
   ],
   "disposable_wallet": {
@@ -123,14 +128,14 @@
   "transactions_submitted_burst": 30,
   "transactions_confirmed_total": 62,
   "transactions_rejected_security_tests": 5,
-  "mean_submit_latency_ms_phase1": 9.7,
-  "mean_submit_latency_ms_burst": 8.9,
-  "burst_tps_confirmed": 1.84,
-  "burst_submit_seconds": 0.27,
-  "burst_confirm_seconds": 16.28,
-  "blocks": 12,
-  "mean_block_time_seconds": 4.09,
-  "median_block_time_seconds": 3,
+  "mean_submit_latency_ms_phase1": 8.5,
+  "mean_submit_latency_ms_burst": 9.7,
+  "burst_tps_confirmed": 1.07,
+  "burst_submit_seconds": 0.29,
+  "burst_confirm_seconds": 28.14,
+  "blocks": 11,
+  "mean_block_time_seconds": 6.8,
+  "median_block_time_seconds": 6,
   "node_restart_sync_seconds": 0.3,
   "nodes_agree_on_chain": true,
   "security_tests": {
@@ -147,7 +152,7 @@
       "status": 400,
       "reason": {
         "accepted": false,
-        "reason": "insufficient balance (incl. pending spends)"
+        "reason": "insufficient balance (incl. pending spends): 999299.000 R0NI available, 1000799.000 R0NI requested"
       }
     },
     "forged_signature": {

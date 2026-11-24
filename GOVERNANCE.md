@@ -3,8 +3,33 @@
 Prototype only — not audited, no live network, no real value.
 Governance decides the direction of the Mac 'N Cheese Chain by
 **capital democracy**: voting power is relative to the coins held
-in each account, so majority holders have more leverage — 1 R0NI
-held = 1 vote.
+in each account, so majority holders have more leverage — 1
+milli-R0NI held = 1 vote-unit (1 R0NI = 1000 vote-units), so a
+0.001 R0NI holding still votes with 1 vote-unit.
+
+## Max supply + divisibility (chosen by Mac 2026-11-23)
+
+- **Max supply ceiling CHOSEN: 10,000,000,000 R0NI (10B).** Recorded
+  decision only — NOT on-chain and NOT final until the first
+  governance proposal ("Choose max supply", options 1B / 10B /
+  100B) is filed and passes. Genesis circulating supply is
+  unchanged: 100,000 R0NI to start. Block 0 was NOT re-mined.
+- **Smallest denomination: 0.001 R0NI.** Amounts are stored
+  internally as integer milli-R0NI (1 R0NI = 1000 milli-units;
+  1 milli = 0.001 R0NI), with exact integer arithmetic — no
+  floats in balances. Human amounts are parsed once at the
+  boundary (`parse_amount()` in `roni_wallet.py`): an int is a
+  legacy whole-R0NI amount, a decimal may carry up to 3 places.
+  Anything below 0.001 R0NI, or with more than 3 decimal places
+  (e.g. 0.0005), is rejected everywhere — transfers, balances,
+  testnet transactions, payload transactions, and votes.
+- **Voting power is in milli-units:** 1 milli = 1 vote-unit.
+  Default quorum 10,000 R0NI = **10,000,000 milli-units**.
+- Legacy files (ledgers / testnet genesis blocks written before
+  this change, with whole-R0NI amounts and no `"amount_unit"`
+  marker) are migrated on load: every stored amount x1000, marked
+  `"amount_unit": "milli-R0NI"` when saved, so a second load does
+  not multiply again. Certificate transactions still move 0 R0NI.
 
 ## The rules
 
@@ -32,6 +57,8 @@ held = 1 vote.
   Buying R0NI after a proposal starts does **not** inflate your
   power on that proposal, and selling after it starts does not
   reduce it either — the snapshot is frozen at filing.
+- Power is counted in **milli-R0NI (vote-units)**: a balance of
+  0.001 R0NI is 1 vote-unit, 100 R0NI is 100,000 vote-units.
 - An address that held **0 R0NI at the snapshot cannot vote**,
   even if it holds R0NI now.
 
@@ -57,8 +84,10 @@ A proposal passes only if, at the end of its voting window
 
 1. **Quorum:** total voting power cast >= `quorum`. Default
    quorum is **10% of the genesis circulating supply**
-   (100,000 R0NI to start) = **10,000 R0NI** of voting power.
-   A custom quorum can be set when the proposal is filed.
+   (100,000 R0NI to start) = **10,000 R0NI** of voting power =
+   **10,000,000 milli-units**. A custom quorum can be set when
+   the proposal is filed (the CLI `--quorum` value is a human
+   R0NI amount, converted to milli-units).
 2. **Strict majority:** the winning option holds more than half
    of the votes cast (it must beat ALL other options combined —
    a tie for first place is not a majority).
@@ -105,11 +134,12 @@ Proposal "Set max supply to 10B", options yes/no, quorum 10,000:
   can be paid or pressured to vote a certain way — the chain
   cannot tell why a vote was cast.
 - **Quorum is absolute, not relative.** The default quorum is
-  10,000 R0NI of voting power (10% of the 100,000 genesis
-  supply). If the circulating supply grows well past 100,000,
-  10,000 becomes a small fraction of it — the quorum default
-  will need revisiting (itself a governance decision) once
-  supply changes.
+  10,000 R0NI of voting power (10,000,000 milli-units; 10% of
+  the 100,000 genesis supply). If the circulating supply grows
+  well past 100,000, 10,000 becomes a small fraction of it — the
+  quorum default will need revisiting (itself a governance
+  decision) once supply changes. Against the chosen 10B ceiling,
+  10,000 R0NI is 0.0001% of max supply.
 - **Snapshot = filing block.** The snapshot is taken when the
   proposal is filed, not when voting opens. If
   `voting_start_block` is well after filing, balances can move
@@ -166,3 +196,9 @@ tally (10,000 yes beats ten 100s no), and the live end-to-end
 tally read back from `/proposal` with all 3 nodes agreeing.
 Results: `testnet/governance_test_results.json`.
 `roni_wallet.py` self-test also covers governance (checks 30–39).
+Divisibility is covered by `testnet/test_fractional.py` (44 checks,
+also mirrored in `testnet-v2/`): fractional transfers (0.001, 1.5),
+sub-milli rejections, exact milli-unit balance sums, legacy
+whole-R0NI migration, a 0.001 R0NI holder voting with 1 vote-unit,
+and fractional tallies — plus the same checks live on a node.
+Results: `testnet/fractional_test_results.json`.

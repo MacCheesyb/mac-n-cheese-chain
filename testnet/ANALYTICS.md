@@ -9,18 +9,18 @@ No real value, not audited.
 - Nodes: 3 (full mesh), miner: node 1 only
 - Blocks: 9 (genesis + 8 mined), difficulty `0000`, EvoHash-11
 - Transactions confirmed: 58 (20 phase 1 + 6 media payload + 30 burst + 1 restart + 1 double-spend-test tx)
-- Burst TPS: **3.32 tx/s** (30 txs, 9.04s to confirm)
-- Mean submit latency: phase 1 19.0 ms, burst 9.3 ms
-- Mean block time: 5.12s, median: 6s
+- Burst TPS: **2.37 tx/s** (30 txs, 12.68s to confirm)
+- Mean submit latency: phase 1 5.1 ms, burst 9.6 ms
+- Mean block time: 6.62s, median: 7s
 - Node restart sync: 0.30s to catch up to height 8
 - All 3 nodes agree on the same chain: True
 
 ## Balances after the run
-- Mac's address `R0NI-ebeb98a5aeea016f49e6abf1c8b1e492317a102d`: **2392 R0NI** (inbound only — nothing was ever signed from it; we do not have his private key)
-- test-A `R0NI-5d71191a33494939687a98f3761396c3f07da1fc`: 999045 R0NI
-- test-B `R0NI-aa51d726d661bd0b8e752e0823471a55473ef606`: 999299 R0NI
-- test-C `R0NI-bac33e77e90463a2e5b6d7ed3c5206254add3669`: 999264 R0NI
-- disposable `R0NI-e56d2126ff80182ffd2a2f5dd7527ac9fa44dd38`: 0 R0NI
+- Mac's address `R0NI-ebeb98a5aeea016f49e6abf1c8b1e492317a102d`: **2392.000 R0NI** (inbound only — nothing was ever signed from it; we do not have his private key)
+- test-A `R0NI-821945082dca78c9be63d36aa67d98ccd0052ab7`: 999045.000 R0NI
+- test-B `R0NI-f6f98431e3303e96ccf853abdc3c3af06a7de272`: 999299.000 R0NI
+- test-C `R0NI-c65d5992e9ab886c5184b2c2fef9f9b5c8b3b0da`: 999264.000 R0NI
+- disposable `R0NI-e56d2126ff80182ffd2a2f5dd7527ac9fa44dd38`: 0.000 R0NI
 
 ## Message / media payloads (transaction format v2)
 - Limits: text 1,000 chars (uncompressed); media 5 MB raw / 1 MB compressed on-chain (zlib level 9); anything bigger is rejected — use kind "ref" (SHA-256 + URI on-chain, media off-chain)
@@ -34,7 +34,7 @@ No real value, not audited.
 
 ## Security tests (all must be rejected)
 - double_spend_same_nonce: REJECTED (400: {'accepted': False, 'reason': 'bad nonce: expected 18, got 17'})
-- overspend: REJECTED (400: {'accepted': False, 'reason': 'insufficient balance (incl. pending spends)'})
+- overspend: REJECTED (400: {'accepted': False, 'reason': 'insufficient balance (incl. pending spends): 999299.000 R0NI available, 1000799.000 R0NI requested'})
 - forged_signature: REJECTED (400: {'accepted': False, 'reason': 'signature verification failed: '})
 - tampered_amount: REJECTED (400: {'accepted': False, 'reason': 'txid mismatch'})
 - tampered_block: REJECTED (400: {'accepted': False, 'reason': 'block hash does not match recomputed EvoHash-11'})

@@ -1,24 +1,25 @@
 {
   "index": 0,
-  "timestamp": 1795154490,
+  "timestamp": 1795487766,
   "previous_hash": "00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000",
   "transactions": [
     {
       "type": "genesis",
-      "recipient": "R0NI-5d71191a33494939687a98f3761396c3f07da1fc",
-      "amount": 1000000
+      "recipient": "R0NI-821945082dca78c9be63d36aa67d98ccd0052ab7",
+      "amount": 1000000000
     },
     {
       "type": "genesis",
-      "recipient": "R0NI-aa51d726d661bd0b8e752e0823471a55473ef606",
-      "amount": 1000000
+      "recipient": "R0NI-f6f98431e3303e96ccf853abdc3c3af06a7de272",
+      "amount": 1000000000
     },
     {
       "type": "genesis",
-      "recipient": "R0NI-bac33e77e90463a2e5b6d7ed3c5206254add3669",
-      "amount": 1000000
+      "recipient": "R0NI-c65d5992e9ab886c5184b2c2fef9f9b5c8b3b0da",
+      "amount": 1000000000
     }
   ],
-  "nonce": 333817,
-  "hash": "0000477743e01c46e625ae820d0449455cf0604962232fea562558f6d0857f21be10ce60dfe4dc3d215b968e667c76303707f5b29737ae5edf216dfe33d6b1d3"
+  "nonce": 208341,
+  "amount_unit": "milli-R0NI",
+  "hash": "0000399e3f3951bb060e44a04dd15050169a1829e1b4f110bd8f338be6ea269e0fdf6b7f740d5a0ca8f88cc0cd2e28051ac30f1064288ba9c8838f8b60569558"
 }
