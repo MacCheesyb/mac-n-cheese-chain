@@ -682,7 +682,11 @@ def make_testnet_tx(wallet_path: str, password: str, recipient: str,
     `amount` is a human amount parsed by parse_amount() — an int is
     legacy whole R0NI, a str/float/Decimal may carry up to 3 decimal
     places (smallest unit 0.001 R0NI). The stored tx "amount" is
-    integer milli-R0NI."""
+    integer milli-R0NI, and the tx carries "amount_unit":
+    "milli-R0NI" so testnet/accept_signed_tx.py knows it was signed
+    in milli units — a tx without that marker is rejected there as
+    pre-milli, never silently converted (a silent conversion would
+    be a 1000x error)."""
     amount = parse_amount(amount)
     if data is not None:
         ok, reason = validate_payload(data)
@@ -695,6 +699,7 @@ def make_testnet_tx(wallet_path: str, password: str, recipient: str,
         "sender": sender,
         "recipient": recipient,
         "amount": amount,
+        "amount_unit": "milli-R0NI",
         "nonce": nonce,
         "signature": priv.sign(message.encode("utf-8")).hex(),
         "sender_pubkey_hex": wallet["public_key_hex"],

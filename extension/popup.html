@@ -16,7 +16,7 @@ button { margin-top: 8px; margin-right: 6px; }
 </style>
 </head>
 <body>
-<h1>R0NI Wallet — v0.4</h1>
+<h1>R0NI Wallet — v0.5</h1>
 <p class="sub">Mac 'N Cheese Chain • Own extension first</p>
 
 <div id="locked">
@@ -41,24 +41,49 @@ button { margin-top: 8px; margin-right: 6px; }
 <button id="copyAddress">Copy address</button>
 <p>Signature: <span id="signature" class="mono">—</span></p>
 <p>Verify: <span id="verifyResult">—</span></p>
+
+<h2 style="font-size:14px;margin:16px 0 4px;">Sign a transfer (milli-R0NI)</h2>
+<p class="sub">Amount in decimal R0NI, up to 3 places — smallest unit 0.001 R0NI. The signed
+transaction's amount is integer milli-R0NI (1.500 R0NI → 1500 milli).</p>
+<label>Recipient address
+  <input id="txRecipient" type="text" autocomplete="off" placeholder="R0NI-… (40 hex characters)">
+</label>
+<label>Amount (R0NI, up to 3 decimal places)
+  <input id="txAmount" type="text" autocomplete="off" placeholder="e.g. 1.500">
+</label>
+<label>Nonce
+  <input id="txNonce" type="text" autocomplete="off" placeholder="0 for the first transfer from this wallet">
+</label>
+<button id="signTx">Sign transfer</button>
+<button id="copySignedTx">Copy signed transaction</button>
+<label>Signed transaction JSON
+  <textarea id="signedTx" rows="8" readonly placeholder="Sign a transfer to see its JSON here. Submit it with testnet/accept_signed_tx.py signed-tx.json."></textarea>
+</label>
 <button id="deleteWallet">Delete wallet from this browser</button>
 
 <p id="status">Locked. Create a wallet with a password, or unlock an existing one.</p>
 
 <p class="note">Prototype only — not audited. Do not use for real funds.
-v0.4 stores the private key encrypted at rest in this browser with
+v0.5 stores the private key encrypted at rest in this browser with
 AES-GCM, unlocked by your password (PBKDF2, 100,000 iterations).
 Balance comes from a local ledger file you load — there is no node
 yet. If this wallet is the genesis holder in that ledger, the
-balance is 100,000 R0NI; otherwise it is the ledger balance, or 0.
-Address here is now the canonical EvoHash-11 address — the same
+balance is 100000.000 R0NI; otherwise it is the ledger balance, or 0.
+Amounts are integer milli-R0NI (1 R0NI = 1000 milli; smallest unit
+0.001 R0NI), exactly as roni_wallet.py since commit e308fee — a
+legacy ledger with whole-R0NI amounts is migrated x1000 on load.
+Address here is the canonical EvoHash-11 address — the same
 address roni_wallet.py gives for the same key (see evo-hash-11.js).
 Wallets created by v0.3 with the old interim SHA-512 address are
 migrated automatically on load, and their ledger entries are
 rewritten to the new address, so a genesis allocation is not lost.
-No node or transaction sending yet — sending lives in
-wallet-app.html in the repo root.</p>
+Sign a transfer above to get a signed transaction JSON — submit it
+with testnet/accept_signed_tx.py signed-tx.json. The extension does
+not send transactions itself. A signed transaction without the
+"amount_unit": "milli-R0NI" marker is a pre-milli transaction and
+is rejected, never silently converted.</p>
 <script src="evo-hash-11.js"></script>
+<script src="amounts.js"></script>
 <script src="popup.js"></script>
 </body>
 </html>

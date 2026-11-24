@@ -1,0 +1,107 @@
+{
+  "tests": [
+    {
+      "name": "extension JS harness: 31 checks pass (parse/format, migration, txid vectors, WebCrypto sign)",
+      "passed": true,
+      "detail": "31 passed, 0 failed"
+    },
+    {
+      "name": "extension-style tx from Node: amount 1500 milli + marker",
+      "passed": true,
+      "detail": "amount=1500 unit=milli-R0NI"
+    },
+    {
+      "name": "extension-style tx: Python verifies its WebCrypto signature",
+      "passed": true,
+      "detail": "sender R0NI-0dfcedc2cc61d..."
+    },
+    {
+      "name": "make_testnet_tx: 1.500 R0NI -> amount 1500 milli + marker",
+      "passed": true,
+      "detail": "amount=1500 unit=milli-R0NI"
+    },
+    {
+      "name": "accept_signed_tx: extension-style 1.500 tx accepted",
+      "passed": true,
+      "detail": "ok"
+    },
+    {
+      "name": "make_testnet_tx: 0.001 R0NI -> amount 1 milli + marker",
+      "passed": true,
+      "detail": "amount=1"
+    },
+    {
+      "name": "accept_signed_tx: extension-style 0.001 tx accepted",
+      "passed": true,
+      "detail": "ok"
+    },
+    {
+      "name": "accept_signed_tx: legacy whole-R0NI tx (amount 100, no marker) REJECTED as pre-milli",
+      "passed": true,
+      "detail": "pre-milli transaction rejected: no \"amount_unit\": \"milli-R0NI\" marker \u2014 this transaction was signed before the milli-R0NI change (or by a wallet that does not m"
+    },
+    {
+      "name": "accept_signed_tx: SAME amount 100 WITH the marker is accepted \u2014 as 0.100 R0NI, proving the marker decides",
+      "passed": true,
+      "detail": "ok"
+    },
+    {
+      "name": "accept_signed_tx: float amount 1.5 (even WITH marker) rejected",
+      "passed": true,
+      "detail": "amount must be an integer number of milli-R0NI (got 1.5) \u2014 the smallest unit is 1 milli = 0.001 R0NI; use a milli-aware "
+    },
+    {
+      "name": "accept_signed_tx: forged signature rejected",
+      "passed": true,
+      "detail": "signature verification failed: "
+    },
+    {
+      "name": "live: single node up (port 8122)",
+      "passed": true,
+      "detail": ""
+    },
+    {
+      "name": "live: accept_signed_tx CLI submits the JS-signed 1.500 R0NI tx (exit 0)",
+      "passed": true,
+      "detail": "signature verified locally against sender public key\nnode 8122: 200 {\"accepted\": true, \"reason\": \"accepted into mempool\"}"
+    },
+    {
+      "name": "live: JS-signed 1.500 tx mined \u2014 recipient holds 1500 milli (1.500 R0NI)",
+      "passed": true,
+      "detail": "{'address': 'R0NI-d2bd52a4486edaafd7eac67b5b4b21641fb492d7', 'balance': 1500, 'balance_R0NI': '1.500'}"
+    },
+    {
+      "name": "live: accept_signed_tx CLI submits the 0.001 R0NI tx",
+      "passed": true,
+      "detail": "signature verified locally against sender public key\nnode 8122: 200 {\"accepted\": true, \"reason\": \"accepted into mempool\"}"
+    },
+    {
+      "name": "live: 0.001 tx mined \u2014 wb holds 1 milli (0.001 R0NI)",
+      "passed": true,
+      "detail": "{'address': 'R0NI-3c1f9aa410bcfcd51974b5830101d7b8bd74f281', 'balance': 1, 'balance_R0NI': '0.001'}"
+    },
+    {
+      "name": "live: accept_signed_tx CLI REFUSES the legacy tx (exit 1, pre-milli)",
+      "passed": true,
+      "detail": "li amounts). Its amount would be read as milli-R0NI and be 1000x smaller than intended. Re-sign it with a milli-aware wallet (extension v0.5+, wallet-app.html, or roni_wallet.py make-tx) and resubmit."
+    },
+    {
+      "name": "live: legacy tx never reached the node \u2014 JS recipient balance still 1500 milli",
+      "passed": true,
+      "detail": "{'address': 'R0NI-d2bd52a4486edaafd7eac67b5b4b21641fb492d7', 'balance': 1500, 'balance_R0NI': '1.500'}"
+    },
+    {
+      "name": "live: legacy tx never reached the node \u2014 wb balance still 1 milli",
+      "passed": true,
+      "detail": "{'address': 'R0NI-3c1f9aa410bcfcd51974b5830101d7b8bd74f281', 'balance': 1, 'balance_R0NI': '0.001'}"
+    }
+  ],
+  "passed": 19,
+  "failed": 0,
+  "rules": {
+    "milli_per_R0NI": 1000,
+    "smallest_unit_R0NI": "0.001",
+    "marker": "amount_unit == 'milli-R0NI'",
+    "pre_milli_policy": "REJECT, never silently convert"
+  }
+}
